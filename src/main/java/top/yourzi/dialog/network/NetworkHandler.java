@@ -1,124 +1,118 @@
 package top.yourzi.dialog.network;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkDirection;
-import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.network.simple.SimpleChannel;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.HandlerThread;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import top.yourzi.dialog.Dialog;
 
 import java.util.List;
-import java.util.Optional;
-import net.minecraft.client.Minecraft;
 
 /**
  * 网络包处理器，用于服务端和客户端之间的通信
  */
 @SuppressWarnings("removal")
 public class NetworkHandler {
-    private static final String PROTOCOL_VERSION = "1.0";
-    public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
-            new ResourceLocation(Dialog.MODID, "main"),
-            () -> PROTOCOL_VERSION,
-            PROTOCOL_VERSION::equals,
-            PROTOCOL_VERSION::equals
-    );
 
     /**
      * 初始化网络包处理器
      */
-    public static void init() {
+    public static void init(final RegisterPayloadHandlersEvent event) {
+        // 设置当前网络版本
+        final PayloadRegistrar registrar = event.registrar("1").executesOn(HandlerThread.NETWORK);
+
         // 注册从服务器到客户端的对话显示包
-        INSTANCE.registerMessage(0, ShowDialogPacket.class,
-                ShowDialogPacket::encode,
-                ShowDialogPacket::decode,
-                ShowDialogPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-                
+        registrar.playToClient(
+                ShowDialogPacket.TYPE,
+                ShowDialogPacket.STREAM_CODEC,
+                ShowDialogPacket::handle
+        );
+
         // 注册从服务器到客户端的重新加载对话包
-        INSTANCE.registerMessage(1, ReloadDialogsPacket.class,
-                ReloadDialogsPacket::encode,
-                ReloadDialogsPacket::decode,
-                ReloadDialogsPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-                
+        registrar.playToClient(
+                ReloadDialogsPacket.TYPE,
+                ReloadDialogsPacket.STREAM_CODEC,
+                ReloadDialogsPacket::handle
+        );
+
         // 注册从服务器到客户端的对话列表包
-        INSTANCE.registerMessage(2, ListDialogsPacket.class,
-                ListDialogsPacket::encode,
-                ListDialogsPacket::decode,
-                ListDialogsPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        
+        registrar.playToClient(
+                ListDialogsPacket.TYPE,
+                ListDialogsPacket.STREAM_CODEC,
+                ListDialogsPacket::handle
+        );
+
         // 注册从客户端到服务端的请求对话包
-        INSTANCE.registerMessage(3, RequestDialogPacket.class,
-                RequestDialogPacket::encode,
-                RequestDialogPacket::decode,
-                RequestDialogPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        registrar.playToServer(
+                RequestDialogPacket.TYPE,
+                RequestDialogPacket.STREAM_CODEC,
+                RequestDialogPacket::handle
+        );
 
         // 注册从服务端到客户端的发送对话数据包
-        INSTANCE.registerMessage(4, SendDialogDataPacket.class,
-                SendDialogDataPacket::encode,
-                SendDialogDataPacket::decode,
-                SendDialogDataPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        registrar.playToClient(
+                SendDialogDataPacket.TYPE,
+                SendDialogDataPacket.STREAM_CODEC,
+                SendDialogDataPacket::handle
+        );
 
         // 注册从服务端到客户端的同步所有对话数据包
-        INSTANCE.registerMessage(5, SyncAllDialogsPacket.class, 
-                SyncAllDialogsPacket::encode,
-                SyncAllDialogsPacket::decode,
-                SyncAllDialogsPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-                
+        registrar.playToClient(
+                SyncAllDialogsPacket.TYPE,
+                SyncAllDialogsPacket.STREAM_CODEC,
+                SyncAllDialogsPacket::handle
+        );
+
         // 注册从客户端到服务端的执行命令包
-        INSTANCE.registerMessage(6, ExecuteServerCommandPacket.class, // 新的ID
-                ExecuteServerCommandPacket::encode,
-                ExecuteServerCommandPacket::decode,
-                ExecuteServerCommandPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
-                
+        registrar.playToServer(
+                ExecuteServerCommandPacket.TYPE,
+                ExecuteServerCommandPacket.STREAM_CODEC,
+                ExecuteServerCommandPacket::handle
+        );
+
         // 注册从服务端到客户端的带实体信息的对话显示包
-        INSTANCE.registerMessage(7, ShowDialogWithEntityPacket.class,
-                ShowDialogWithEntityPacket::encode,
-                ShowDialogWithEntityPacket::decode,
-                ShowDialogWithEntityPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        registrar.playToClient(
+                ShowDialogWithEntityPacket.TYPE,
+                ShowDialogWithEntityPacket.STREAM_CODEC,
+                ShowDialogWithEntityPacket::handle
+        );
     }
 
     /**
      * 向指定玩家发送显示对话的网络包
      */
     public static void sendShowDialogToPlayer(ServerPlayer player, String dialogId, String dialogJson) {
-        INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new ShowDialogPacket(dialogId, dialogJson));
+        PacketDistributor.sendToPlayer(player, new ShowDialogPacket(dialogId, dialogJson));
     }
-    
+
     /**
      * 向指定玩家发送带实体信息的显示对话的网络包
      */
     public static void sendShowDialogToPlayerWithEntity(ServerPlayer player, String dialogId, String dialogJson, net.minecraft.world.entity.Entity speakerEntity) {
-        INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new ShowDialogWithEntityPacket(dialogId, dialogJson, speakerEntity.getId()));
+        PacketDistributor.sendToPlayer(player, new ShowDialogWithEntityPacket(dialogId, dialogJson, speakerEntity.getId()));
     }
 
     /**
      * 向指定玩家发送重新加载对话的网络包
      */
     public static void sendReloadDialogsToPlayer(ServerPlayer player) {
-        INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new ReloadDialogsPacket());
+        PacketDistributor.sendToPlayer(player, new ReloadDialogsPacket());
     }
-    
+
     /**
      * 向所有玩家发送重新加载对话的网络包
      */
     public static void sendReloadDialogsToAll() {
-        INSTANCE.send(PacketDistributor.ALL.noArg(), new ReloadDialogsPacket());
+        PacketDistributor.sendToAllPlayers(new ReloadDialogsPacket());
     }
-    
+
     /**
      * 向指定玩家发送对话列表的网络包
      */
     public static void sendDialogListToPlayer(ServerPlayer player, List<String> dialogIds, List<String> dialogNames) {
-        INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new ListDialogsPacket(dialogIds, dialogNames));
+        PacketDistributor.sendToPlayer(player, new ListDialogsPacket(dialogIds, dialogNames));
     }
 
     /**
@@ -126,7 +120,7 @@ public class NetworkHandler {
      */
     public static void sendRequestDialogToServer(String dialogId) {
         if (Minecraft.getInstance() != null && Minecraft.getInstance().getConnection() != null) {
-            INSTANCE.sendToServer(new RequestDialogPacket(dialogId));
+            PacketDistributor.sendToServer(new RequestDialogPacket(dialogId));
         } else {
             Dialog.LOGGER.warn("Cannot send RequestDialogPacket: not on client or no connection.");
         }
@@ -136,21 +130,21 @@ public class NetworkHandler {
      * 服务端向指定玩家发送特定对话数据的网络包
      */
     public static void sendDialogDataToPlayer(ServerPlayer player, String dialogId, String dialogJson) {
-        INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new SendDialogDataPacket(dialogId, dialogJson));
+        PacketDistributor.sendToPlayer(player, new SendDialogDataPacket(dialogId, dialogJson));
     }
 
     /**
      * 服务端向指定玩家发送所有对话数据的网络包。
      */
     public static void sendAllDialogsToPlayer(ServerPlayer player, java.util.Map<String, String> dialogDataMap) {
-        INSTANCE.send(PacketDistributor.PLAYER.with(() -> player), new SyncAllDialogsPacket(dialogDataMap));
+        PacketDistributor.sendToAllPlayers(new SyncAllDialogsPacket(dialogDataMap));
     }
 
     /**
      * 服务端向所有玩家发送所有对话数据的网络包。
      */
     public static void sendAllDialogsToAllPlayers(java.util.Map<String, String> dialogDataMap) {
-        INSTANCE.send(PacketDistributor.ALL.noArg(), new SyncAllDialogsPacket(dialogDataMap));
+        PacketDistributor.sendToAllPlayers(new SyncAllDialogsPacket(dialogDataMap));
     }
 
     /**
@@ -158,18 +152,18 @@ public class NetworkHandler {
      */
     public static void sendExecuteCommandToServer(String command) {
         if (Minecraft.getInstance() != null && Minecraft.getInstance().getConnection() != null) {
-            INSTANCE.sendToServer(new ExecuteServerCommandPacket(command));
+            PacketDistributor.sendToServer(new ExecuteServerCommandPacket(command));
         } else {
             Dialog.LOGGER.warn("Cannot send ExecuteServerCommandPacket: not on client or no connection.");
         }
     }
-    
+
     /**
      * 客户端向服务端发送带实体信息的执行命令请求
      */
     public static void sendExecuteCommandToServerWithEntity(String command, int executorEntityId) {
         if (Minecraft.getInstance() != null && Minecraft.getInstance().getConnection() != null) {
-            INSTANCE.sendToServer(new ExecuteServerCommandPacket(command, executorEntityId));
+            PacketDistributor.sendToServer(new ExecuteServerCommandPacket(command, executorEntityId));
         } else {
             Dialog.LOGGER.warn("Cannot send ExecuteServerCommandPacket with entity: not on client or no connection.");
         }

@@ -1,68 +1,52 @@
 package top.yourzi.dialog.network;
 
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.network.NetworkEvent;
-import top.yourzi.dialog.DialogManager;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 import top.yourzi.dialog.Dialog;
+import top.yourzi.dialog.DialogManager;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Supplier;
 
 /**
  * 网络数据包，用于从服务端向客户端同步所有对话数据。
  */
-public class SyncAllDialogsPacket {
-    private final Map<String, String> dialogDataMap;
+public record SyncAllDialogsPacket(Map<String, String> dialogDataMap) implements CustomPacketPayload {
 
-    public SyncAllDialogsPacket(Map<String, String> dialogDataMap) {
-        this.dialogDataMap = dialogDataMap;
-    }
+    public static final CustomPacketPayload.Type<SyncAllDialogsPacket> TYPE = new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "sync_all_dialogs_packet"));
 
-    /**
-     * 将包数据编码到字节缓冲区。
-     */
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeInt(dialogDataMap.size());
-        dialogDataMap.forEach((id, json) -> {
-            buf.writeUtf(id);
-            buf.writeUtf(json);
-        });
-    }
+    public static final StreamCodec<FriendlyByteBuf, SyncAllDialogsPacket> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.STRING_UTF8),
+            SyncAllDialogsPacket::dialogDataMap,
+            SyncAllDialogsPacket::new
+    );
 
-    /**
-     * 从字节缓冲区解码包数据。
-     */
-    public static SyncAllDialogsPacket decode(FriendlyByteBuf buf) {
-        int size = buf.readInt();
-        Map<String, String> dialogDataMap = new HashMap<>(size);
-        for (int i = 0; i < size; i++) {
-            String id = buf.readUtf();
-            String json = buf.readUtf();
-            dialogDataMap.put(id, json);
-        }
-        return new SyncAllDialogsPacket(dialogDataMap);
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
     /**
      * 处理接收到的包 (在客户端执行)。
      */
-    public boolean handle(Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+    public static void handle(final SyncAllDialogsPacket message, final IPayloadContext context) {
+        context.enqueueWork(() -> {
             // 确保在客户端线程中执行
-            handleOnClient();
+            handleOnClient(message);
         });
-        ctx.get().setPacketHandled(true);
-        return true;
     }
 
     /**
      * 在客户端处理包的具体逻辑。
      */
     @OnlyIn(Dist.CLIENT)
-    private void handleOnClient() {
-        DialogManager.getInstance().receiveAllDialogsFromServer(this.dialogDataMap);
+    private static void handleOnClient(final SyncAllDialogsPacket message) {
+        DialogManager.getInstance().receiveAllDialogsFromServer(message.dialogDataMap());
     }
 }

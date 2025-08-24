@@ -1,40 +1,38 @@
 package top.yourzi.dialog;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonSyntaxException;
-
+import com.google.gson.*;
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.serialization.JsonOps;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.entity.player.Player;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import top.yourzi.dialog.model.DialogEntry;
 import top.yourzi.dialog.model.DialogOption;
 import top.yourzi.dialog.model.DialogSequence;
-import top.yourzi.dialog.ui.DialogScreen;
 import top.yourzi.dialog.network.NetworkHandler;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.commands.CommandSourceStack;
+import top.yourzi.dialog.ui.DialogScreen;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
-import java.util.Collections;
-
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.client.sounds.SoundManager;
-import net.minecraft.sounds.SoundEvent;
 
 public class DialogManager {
     public static final Gson GSON = new GsonBuilder().create();
@@ -51,7 +49,7 @@ public class DialogManager {
     private final List<DialogEntry> dialogHistory = new ArrayList<>();
     // 标记下一次对话推进是否由快速跳过触发
     private static boolean isFastForwardingNext = false;
-    
+
     // 全局音频播放管理
     private static SimpleSoundInstance currentAudioInstance = null;
     private static long audioStartTime = 0;
@@ -62,8 +60,9 @@ public class DialogManager {
     // 存储当前对话的玩家名称
     private String currentDialogPlayerName;
 
-    private DialogManager() {}
-    
+    private DialogManager() {
+    }
+
     /**
      * 向玩家发送消息。
      */
@@ -73,7 +72,7 @@ public class DialogManager {
             Minecraft.getInstance().player.sendSystemMessage(message);
         }
     }
-    
+
     public static DialogManager getInstance() {
         return INSTANCE;
     }
@@ -81,14 +80,15 @@ public class DialogManager {
     /**
      * 加载所有对话序列 (仅服务端调用)。
      * 此方法从数据包 (data/<modid>/dialogs/) 加载对话。
+     *
      * @param resourceManager 资源管理器实例。
      */
     public void loadDialogsFromServer(ResourceManager resourceManager) {
         dialogSequences.clear();
 
         Map<ResourceLocation, Resource> modSpecificResources = resourceManager.listResources("dialogs", resource -> resource.getPath().endsWith(".json")).entrySet().stream()
-            .filter(entry -> entry.getKey().getNamespace().equals(Dialog.MODID))
-            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                .filter(entry -> entry.getKey().getNamespace().equals(Dialog.MODID))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
 
         modSpecificResources.forEach((resourceLocation, resource) -> {
@@ -111,6 +111,7 @@ public class DialogManager {
 
     /**
      * 解析对话序列JSON文件 (内部使用, 服务端加载时调用)。
+     *
      * @param resource 资源文件。
      */
     private DialogSequence parseDialogSequenceFromFile(Resource resource) {
@@ -149,6 +150,7 @@ public class DialogManager {
 
     /**
      * (客户端) 接收并缓存从服务器同步过来的所有对话数据。
+     *
      * @param dialogDataMap 一个映射，键是对话ID，值是对话内容的JSON字符串。
      */
     @OnlyIn(Dist.CLIENT)
@@ -192,7 +194,8 @@ public class DialogManager {
      */
     @OnlyIn(Dist.CLIENT)
     public List<DialogEntry> getDialogHistory() {
-        if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide) return Collections.emptyList();
+        if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide)
+            return Collections.emptyList();
         return new ArrayList<>(dialogHistory);
     }
 
@@ -206,6 +209,7 @@ public class DialogManager {
 
     /**
      * 记录玩家在当前对话中选择的选项。
+     *
      * @param optionText 所选选项的文本。
      */
     @OnlyIn(Dist.CLIENT)
@@ -256,7 +260,7 @@ public class DialogManager {
         }
         return null;
     }
-    
+
     /**
      * 获取所有对话序列。
      */
@@ -265,10 +269,22 @@ public class DialogManager {
     }
 
     /**
+     * Component 序列号到 JsonElement
+     *
+     * @param component
+     * @param provider
+     * @return
+     */
+    static JsonElement serialize(Component component, HolderLookup.Provider provider) {
+        return ComponentSerialization.CODEC.encodeStart(provider.createSerializationContext(JsonOps.INSTANCE), component).getOrThrow(JsonParseException::new);
+    }
+
+    /**
      * (服务端) 为特定玩家创建一个对话序列的副本，并根据玩家权限和visibility_command过滤选项。
+     *
      * @param originalSequence 原始对话序列。
-     * @param player 执行命令的玩家。
-     * @param server Minecraft服务器实例。
+     * @param player           执行命令的玩家。
+     * @param server           Minecraft服务器实例。
      * @return 经过选项过滤的对话序列副本；如果原始序列为null，则返回null。
      */
     public DialogSequence createPlayerSpecificSequence(DialogSequence originalSequence, ServerPlayer player, MinecraftServer server) {
@@ -284,16 +300,17 @@ public class DialogManager {
             Dialog.LOGGER.error("Failed to deep copy originalSequence for ID: {}. No player-specific sequence will be generated.", originalSequence.getId());
             return null;
         }
-        
+
         if (playerSpecificSequence.getEntries() == null) {
             return playerSpecificSequence;
         }
 
         List<DialogEntry> visibleEntries = new ArrayList<>();
         CommandSourceStack commandSource = player.createCommandSourceStack()
-            .withPermission(server.getOperatorUserPermissionLevel())
-            .withSuppressedOutput();
+                .withPermission(server.getOperatorUserPermissionLevel())
+                .withSuppressedOutput();
 
+        CommandDispatcher<CommandSourceStack> dispatcher = server.getCommands().getDispatcher();
         for (DialogEntry entry : playerSpecificSequence.getEntries()) {
             if (entry == null) {
                 continue;
@@ -303,50 +320,51 @@ public class DialogManager {
             String entryVisibilityCommand = entry.getVisibilityCommand();
             if (entryVisibilityCommand != null && !entryVisibilityCommand.isEmpty()) {
                 try {
-                    int result = server.getCommands().performPrefixedCommand(commandSource, entryVisibilityCommand);
+                    int result = dispatcher.execute(dispatcher.parse(entryVisibilityCommand, commandSource));
                     if (result != 1) {
                         Dialog.LOGGER.debug("Visibility command '{}' for entry '{}' (dialog '{}') for player {} returned {}, entry hidden.",
-                                           entryVisibilityCommand, entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), result);
+                                entryVisibilityCommand, entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), result);
                         continue; // 跳过此条目，不添加到 visibleEntries
                     }
                 } catch (Exception e) {
                     Dialog.LOGGER.warn("Error executing visibility command '{}' for entry '{}' (dialog '{}') for player {}: {}. Entry hidden.",
-                                       entryVisibilityCommand, entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage());
+                            entryVisibilityCommand, entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage());
                     continue; // 出错则隐藏条目
                 }
             }
+            RegistryAccess levelRegistryAccess = Minecraft.getInstance().level.registryAccess();
 
             //解析条目文本和说话者中的选择器
             // commandSource 和 player 来自方法参数，在此作用域内可用
             if (entry.getText() != null) { // 假设 entry.getText() 返回 JsonElement
                 try {
-                    Component textComponent = Component.Serializer.fromJson(entry.getText());
+                    Component textComponent = Component.Serializer.fromJson(entry.getText(), levelRegistryAccess);
                     if (textComponent != null) {
                         Component resolvedTextComponent = ComponentUtils.updateForEntity(commandSource, textComponent, player, 0);
-                        entry.setText(Component.Serializer.toJsonTree(resolvedTextComponent));
+                        entry.setText(serialize(resolvedTextComponent, levelRegistryAccess));
                     }
                 } catch (JsonSyntaxException e) {
                     Dialog.LOGGER.warn("Failed to parse text component JSON for entry '{}' (dialog '{}') for player {}: {}. Skipping text update.",
-                                       entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage());
+                            entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage());
                 } catch (Exception e) {
                     Dialog.LOGGER.error("Unexpected error processing text component for entry '{}' (dialog '{}') for player {}: {}. Skipping text update.",
-                                       entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage(), e);
+                            entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage(), e);
                 }
             }
 
             if (entry.getSpeaker() != null) { // 假设 entry.getSpeaker() 返回 JsonElement
                 try {
-                    Component speakerComponent = Component.Serializer.fromJson(entry.getSpeaker());
+                    Component speakerComponent = Component.Serializer.fromJson(entry.getSpeaker(), levelRegistryAccess);
                     if (speakerComponent != null) {
                         Component resolvedSpeakerComponent = ComponentUtils.updateForEntity(commandSource, speakerComponent, player, 0);
-                        entry.setSpeaker(Component.Serializer.toJsonTree(resolvedSpeakerComponent));
+                        entry.setSpeaker(serialize(resolvedSpeakerComponent, levelRegistryAccess));
                     }
                 } catch (JsonSyntaxException e) {
                     Dialog.LOGGER.warn("Failed to parse speaker component JSON for entry '{}' (dialog '{}') for player {}: {}. Skipping speaker update.",
-                                       entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage());
+                            entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage());
                 } catch (Exception e) {
                     Dialog.LOGGER.error("Unexpected error processing speaker component for entry '{}' (dialog '{}') for player {}: {}. Skipping speaker update.",
-                                       entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage(), e);
+                            entry.getId(), playerSpecificSequence.getId(), player.getName().getString(), e.getMessage(), e);
                 }
             }
 
@@ -361,16 +379,11 @@ public class DialogManager {
                     }
 
                     try {
-                        int result = server.getCommands().performPrefixedCommand(commandSource, optionVisibilityCommand);
-                        if (result == 1) {
-                            visibleOptions.add(option);
-                        } else {
-                            Dialog.LOGGER.debug("Visibility command '{}' for option '{}' (dialog '{}', entry '{}') for player {} returned {}, option hidden.",
-                                               optionVisibilityCommand, option.getText(player.getName().getString()) != null ? option.getText(player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), result);
-                        }
+                        server.getCommands().performPrefixedCommand(commandSource, optionVisibilityCommand);
+                        visibleOptions.add(option);
                     } catch (Exception e) {
                         Dialog.LOGGER.warn("Error executing visibility command '{}' for option '{}' (dialog '{}', entry '{}') for player {}: {}. Option hidden.",
-                                           optionVisibilityCommand, option.getText(player.getName().getString()) != null ? option.getText(player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), e.getMessage());
+                                optionVisibilityCommand, option.getText(levelRegistryAccess, player.getName().getString()) != null ? option.getText(levelRegistryAccess, player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), e.getMessage());
                     }
                 }
                 entry.setOptions(visibleOptions.toArray(new DialogOption[0]));
@@ -380,7 +393,7 @@ public class DialogManager {
         playerSpecificSequence.setEntries(visibleEntries.toArray(new DialogEntry[0]));
         return playerSpecificSequence;
     }
-    
+
     /**
      * (客户端) 接收并缓存单个对话数据。
      */
@@ -417,12 +430,12 @@ public class DialogManager {
             sendPlayerMessage(Component.translatable("dialog.manager.requesting_from_server", dialogId));
             return;
         }
-        
+
         clearDialogHistory(); // 开始新对话时清空历史记录
         currentSequence = sequence;
         currentEntry = sequence.getFirstEntry();
         addDialogToHistory(currentEntry); // 将第一个条目加入历史记录
-        
+
         if (currentEntry == null) {
             Dialog.LOGGER.error("No entries found in dialog sequence: {}", dialogId);
             sendPlayerMessage(Component.translatable("dialog.manager.no_entries", dialogId));
@@ -441,13 +454,14 @@ public class DialogManager {
 
     /**
      * (客户端) 接收从服务端发送过来的、已经为当前玩家过滤好选项的完整对话序列，并显示它。
-     * @param dialogId 对话的ID (主要用于日志和潜在的映射键)。
+     *
+     * @param dialogId     对话的ID (主要用于日志和潜在的映射键)。
      * @param sequenceJson 包含完整对话序列（已过滤选项）的JSON字符串。
      */
     @OnlyIn(Dist.CLIENT)
     public void receiveAndShowPlayerSpecificDialog(String dialogId, String sequenceJson) {
         if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide) return;
-        
+
         stopAutoPlay(); // Reset auto-play
 
         DialogSequence playerSequence;
@@ -468,15 +482,15 @@ public class DialogManager {
         if (!dialogId.equals(playerSequence.getId())) {
             Dialog.LOGGER.warn("Dialog ID mismatch! Expected (from packet): {}, ID in parsed sequence: {}. Using ID from sequence.", dialogId, playerSequence.getId());
         }
-        
+
         clearDialogHistory();
         currentSequence = playerSequence;
         currentEntry = playerSequence.getFirstEntry();
-        
+
         if (currentEntry == null) {
             Dialog.LOGGER.error("No entries found in player-specific dialog sequence: {}", playerSequence.getId());
             sendPlayerMessage(Component.translatable("dialog.manager.no_entries", playerSequence.getId()));
-            currentSequence = null; 
+            currentSequence = null;
             return;
         }
 
@@ -497,7 +511,7 @@ public class DialogManager {
     @OnlyIn(Dist.CLIENT)
     public void receiveAndShowPlayerSpecificDialogWithEntity(String dialogId, String sequenceJson, int speakerEntityId) {
         if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide) return;
-        
+
         stopAutoPlay(); // Reset auto-play
 
         DialogSequence playerSequence;
@@ -524,15 +538,15 @@ public class DialogManager {
         if (Minecraft.getInstance().level != null) {
             speakerEntity = Minecraft.getInstance().level.getEntity(speakerEntityId);
         }
-        
+
         clearDialogHistory();
         currentSequence = playerSequence;
         currentEntry = playerSequence.getFirstEntry();
-        
+
         if (currentEntry == null) {
             Dialog.LOGGER.error("No entries found in player-specific dialog sequence: {}", playerSequence.getId());
             sendPlayerMessage(Component.translatable("dialog.manager.no_entries", playerSequence.getId()));
-            currentSequence = null; 
+            currentSequence = null;
             return;
         }
 
@@ -582,7 +596,7 @@ public class DialogManager {
     public static void stopAutoPlay() {
         isAutoPlaying = false;
     }
-    
+
     /**
      * 显示对话序列中的下一条对话。
      */
@@ -600,7 +614,7 @@ public class DialogManager {
             currentEntry = null;
             return;
         }
-        
+
         DialogEntry nextEntry = currentSequence.getNextEntry(currentEntry);
         if (nextEntry == null) {
             // 对话结束，关闭对话界面
@@ -609,16 +623,17 @@ public class DialogManager {
             currentEntry = null;
             return;
         }
-        
+
         currentEntry = nextEntry;
         addDialogToHistory(currentEntry); // 将后续条目加入历史记录
-        
+
         // 在创建新的DialogScreen之前停止当前音频
         stopCurrentAudio();
-        
+
         // 更新对话界面
         Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
     }
+
     /**
      * 根据选项跳转到指定的对话。
      */
@@ -628,20 +643,20 @@ public class DialogManager {
         if (currentSequence == null) {
             return;
         }
-        
+
         DialogEntry targetEntry = currentSequence.findEntryById(targetId);
         if (targetEntry == null) {
             Dialog.LOGGER.error("Target dialog entry not found: {}", targetId);
             sendPlayerMessage(Component.translatable("dialog.manager.target_not_found", targetId));
             return;
         }
-        
+
         currentEntry = targetEntry;
         addDialogToHistory(currentEntry); // 将跳转的条目加入历史记录
-        
+
         // 在创建新的DialogScreen之前停止当前音频
         stopCurrentAudio();
-        
+
         Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
     }
 
@@ -651,11 +666,12 @@ public class DialogManager {
     public void executeCommands(Player player, List<String> commands) {
         executeCommands(player, commands, null);
     }
-    
+
     /**
      * 执行指令列表，支持指定实体作为执行者
-     * @param player 玩家（用于向后兼容）
-     * @param commands 指令列表
+     *
+     * @param player         玩家（用于向后兼容）
+     * @param commands       指令列表
      * @param executorEntity 执行指令的实体，null表示使用玩家自己
      */
     public void executeCommands(Player player, List<String> commands, net.minecraft.world.entity.Entity executorEntity) {
@@ -673,7 +689,7 @@ public class DialogManager {
     }
 
     // 保留旧的 executeCommand 方法以实现向后兼容
-    
+
     /**
      * 播放对话音频（全局管理）
      */
@@ -682,23 +698,23 @@ public class DialogManager {
         try {
             // 停止当前播放的音频
             stopCurrentAudio();
-            
+
             // 移除.ogg后缀（如果存在）
             String soundName = audioPath.replace(".ogg", "");
-            
+
             // 构建音频资源位置 - 使用sounds.json中定义的音频事件名称
-            ResourceLocation audioLocation = new ResourceLocation(Dialog.MODID, soundName);
-            
+            ResourceLocation audioLocation = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, soundName);
+
             // 创建音频实例并播放
             currentAudioInstance = SimpleSoundInstance.forUI(
-                SoundEvent.createVariableRangeEvent(audioLocation),
-                1.0f, // volume
-                1.0f  // pitch
+                    SoundEvent.createVariableRangeEvent(audioLocation),
+                    1.0f, // volume
+                    1.0f  // pitch
             );
-            
+
             SoundManager soundManager = Minecraft.getInstance().getSoundManager();
             soundManager.play(currentAudioInstance);
-            
+
             audioStartTime = System.currentTimeMillis();
             audioEndTime = 0; // 重置结束时间
             audioPlaying = true;
@@ -707,7 +723,7 @@ public class DialogManager {
             Dialog.LOGGER.error("Failed to play dialog audio: {}", audioPath, e);
         }
     }
-    
+
     /**
      * 停止当前播放的音频（全局管理）
      */
@@ -721,7 +737,7 @@ public class DialogManager {
             audioEndTime = 0; // 重置结束时间
         }
     }
-    
+
     /**
      * 检查音频是否正在播放（全局管理）
      */
@@ -729,7 +745,7 @@ public class DialogManager {
     public static boolean isAudioPlaying() {
         return audioPlaying;
     }
-    
+
     /**
      * 检查音频是否已完成播放（全局管理）
      */
@@ -738,16 +754,17 @@ public class DialogManager {
         if (!audioPlaying || currentAudioInstance == null) {
             return true;
         }
-        
+
         SoundManager soundManager = Minecraft.getInstance().getSoundManager();
         if (!soundManager.isActive(currentAudioInstance)) {
             audioPlaying = false;
             audioEndTime = System.currentTimeMillis();
             return true;
         }
-        
+
         return false;
     }
+
     @Deprecated
     public void executeCommand(Player player, String command) {
         if (command != null && !command.isEmpty()) {

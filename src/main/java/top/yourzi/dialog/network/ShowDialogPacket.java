@@ -1,69 +1,59 @@
 package top.yourzi.dialog.network;
 
-import java.util.function.Supplier;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import top.yourzi.dialog.Dialog;
 import top.yourzi.dialog.DialogManager;
 
 /**
  * 显示对话的网络包
  */
-public class ShowDialogPacket {
-    private final String dialogId;
-    private final String dialogJson;
-    
-    public ShowDialogPacket(String dialogId, String dialogJson) {
-        this.dialogId = dialogId;
-        this.dialogJson = dialogJson;
-    }
 
-    public ShowDialogPacket(String dialogId) {
-        this(dialogId, "");
-    }
+public record ShowDialogPacket(String dialogId, String dialogJson) implements CustomPacketPayload {
 
-    /**
-     * 将包数据编码到字节缓冲区
-     */
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeUtf(dialogId);
-        buf.writeUtf(dialogJson); // 编码新增的字段
-    }
+    public static final CustomPacketPayload.Type<ShowDialogPacket> TYPE = new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "show_dialog_packet"));
 
-    /**
-     * 从字节缓冲区解码包数据
-     */
-    public static ShowDialogPacket decode(FriendlyByteBuf buf) {
-        String dialogId = buf.readUtf();
-        String dialogJson = buf.readUtf(); // 解码新增的字段
-        return new ShowDialogPacket(dialogId, dialogJson);
+    public static final StreamCodec<ByteBuf, ShowDialogPacket> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.STRING_UTF8,
+            ShowDialogPacket::dialogId,
+            ByteBufCodecs.STRING_UTF8,
+            ShowDialogPacket::dialogJson,
+            ShowDialogPacket::new
+    );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
     /**
      * 处理接收到的包
      */
-    public boolean handle(Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+    public static void handle(final ShowDialogPacket message, final IPayloadContext context) {
+        context.enqueueWork(() -> {
             // 确保在客户端线程中执行
-            handleOnClient();
+            handleOnClient(message);
         });
-        ctx.get().setPacketHandled(true);
-        return true;
     }
 
     /**
      * 在客户端处理包
      */
     @OnlyIn(Dist.CLIENT)
-    private void handleOnClient() {
+    private static void handleOnClient(final ShowDialogPacket message) {
         // 在客户端显示对话
         Minecraft.getInstance().execute(() -> {
-            if (this.dialogJson != null && !this.dialogJson.isEmpty()) {
-                DialogManager.getInstance().receiveAndShowPlayerSpecificDialog(this.dialogId, this.dialogJson);
+            if (message.dialogJson() != null && !message.dialogJson().isEmpty()) {
+                DialogManager.getInstance().receiveAndShowPlayerSpecificDialog(message.dialogId(), message.dialogJson());
             } else {
-                top.yourzi.dialog.Dialog.LOGGER.warn("ShowDialogPacket received for id '{}' but dialogJson is empty. Client will not show dialog via this packet.", this.dialogId);
+                top.yourzi.dialog.Dialog.LOGGER.warn("ShowDialogPacket received for id '{}' but dialogJson is empty. Client will not show dialog via this packet.", message.dialogId());
             }
         });
     }

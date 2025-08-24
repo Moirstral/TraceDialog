@@ -1,9 +1,10 @@
 package top.yourzi.dialog.event;
 
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import top.yourzi.dialog.Dialog;
 import top.yourzi.dialog.DialogManager;
 import top.yourzi.dialog.network.NetworkHandler;
@@ -11,11 +12,10 @@ import java.util.Map;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
-import net.minecraftforge.event.AddReloadListenerEvent;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-@Mod.EventBusSubscriber(modid = Dialog.MODID)
+@EventBusSubscriber(modid = Dialog.MODID)
 public class PlayerEventHandler {
 
     @SubscribeEvent

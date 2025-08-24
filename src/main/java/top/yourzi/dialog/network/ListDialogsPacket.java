@@ -1,80 +1,64 @@
 package top.yourzi.dialog.network;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Supplier;
-
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.network.NetworkEvent;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import top.yourzi.dialog.Dialog;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 列出所有对话的网络包
  */
-public class ListDialogsPacket {
-    private final List<String> dialogIds;
-    private final List<String> dialogNames;
-    
-    public ListDialogsPacket(List<String> dialogIds, List<String> dialogNames) {
-        this.dialogIds = dialogIds;
-        this.dialogNames = dialogNames;
+public record ListDialogsPacket(List<String> dialogIds, List<String> dialogNames) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<ListDialogsPacket> TYPE = new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "list_dialogs_packet"));
+
+    public static final StreamCodec<FriendlyByteBuf, ListDialogsPacket> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8),
+            ListDialogsPacket::dialogIds,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8),
+            ListDialogsPacket::dialogNames,
+            ListDialogsPacket::new
+    );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
-    
-    /**
-     * 将包数据编码到字节缓冲区
-     */
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeInt(dialogIds.size());
-        for (int i = 0; i < dialogIds.size(); i++) {
-            buf.writeUtf(dialogIds.get(i));
-            buf.writeUtf(dialogNames.get(i));
-        }
-    }
-    
-    /**
-     * 从字节缓冲区解码包数据
-     */
-    public static ListDialogsPacket decode(FriendlyByteBuf buf) {
-        int size = buf.readInt();
-        List<String> ids = new ArrayList<>(size);
-        List<String> names = new ArrayList<>(size);
-        
-        for (int i = 0; i < size; i++) {
-            ids.add(buf.readUtf());
-            names.add(buf.readUtf());
-        }
-        
-        return new ListDialogsPacket(ids, names);
-    }
-    
+
     /**
      * 处理接收到的包
      */
-    public boolean handle(Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+    public static void handle(final ListDialogsPacket message, final IPayloadContext context) {
+        context.enqueueWork(() -> {
             // 确保在客户端线程中执行
-            handleOnClient();
+            handleOnClient(message);
         });
-        ctx.get().setPacketHandled(true);
-        return true;
     }
-    
+
     /**
      * 在客户端处理包
      */
     @OnlyIn(Dist.CLIENT)
-    private void handleOnClient() {
+    private static void handleOnClient(final ListDialogsPacket message) {
         // 在客户端显示对话列表
         Minecraft.getInstance().execute(() -> {
-            for (int i = 0; i < dialogIds.size(); i++) {
-                Minecraft.getInstance().player.sendSystemMessage(
-                    Component.literal(
-                        "   - " + dialogIds.get(i) + " (" + dialogNames.get(i) + ")"
-                    )
-                );
+            for (int i = 0; i < message.dialogIds().size(); i++) {
+                if (Minecraft.getInstance().player != null) {
+                    Minecraft.getInstance().player.sendSystemMessage(
+                            Component.literal(
+                                    "   - " + message.dialogIds().get(i) + " (" + message.dialogNames().get(i) + ")"
+                            )
+                    );
+                }
             }
         });
     }

@@ -9,6 +9,7 @@ import com.google.gson.annotations.SerializedName;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import java.util.Map;
@@ -32,8 +33,8 @@ public class DialogOption {
     // 缓存的文本组件
     private transient Component cachedTextComponent;
 
-    public Component getText(String playerName) {
-        return placeHolderReplace("@i", playerName, this.text);
+    public Component getText(HolderLookup.Provider provider, String playerName) {
+        return placeHolderReplace("@i", playerName, this.text, provider);
     }
 
     public void setText(JsonElement text) {
@@ -74,7 +75,7 @@ public class DialogOption {
     private String visibilityCommand;
 
 
-    private Component placeHolderReplace(String fromString, String toString, JsonElement targetElement) {
+    public Component placeHolderReplace(String fromString, String toString, JsonElement targetElement, HolderLookup.Provider provider) {
         if (targetElement == null || targetElement.isJsonNull()) {
             return Component.empty();
         }
@@ -86,10 +87,10 @@ public class DialogOption {
             
             Component componentAfterJsonProcessing;
             try {
-                componentAfterJsonProcessing = Component.Serializer.fromJson(jsonObjectCopy);
+                componentAfterJsonProcessing = Component.Serializer.fromJson(jsonObjectCopy, provider);
             } catch (JsonSyntaxException e) {
                  try {
-                    componentAfterJsonProcessing = Component.Serializer.fromJson(targetElement); // Fallback to original
+                    componentAfterJsonProcessing = Component.Serializer.fromJson(targetElement, provider); // Fallback to original
                 } catch (JsonSyntaxException e2) {
                     return Component.empty(); // Both failed
                 }
@@ -100,7 +101,7 @@ public class DialogOption {
             MutableComponent combinedText = Component.empty();
             JsonArray jsonArray = targetElement.getAsJsonArray();
             for (JsonElement element : jsonArray) {
-                combinedText.append(placeHolderReplace(fromString, pString, element));
+                combinedText.append(placeHolderReplace(fromString, pString, element, provider));
             }
             return combinedText;
         } else if (targetElement.isJsonPrimitive() && targetElement.getAsJsonPrimitive().isString()) {
@@ -108,7 +109,7 @@ public class DialogOption {
         }
         
         try {
-            Component component = Component.Serializer.fromJson(targetElement);
+            Component component = Component.Serializer.fromJson(targetElement, provider);
             return replaceTextInComponent(component, fromString, pString);
         } catch (JsonSyntaxException e) {
             return Component.empty();

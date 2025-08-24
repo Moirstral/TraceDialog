@@ -1,20 +1,17 @@
 package top.yourzi.dialog.model;
 
-import java.util.List;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonSyntaxException;
+import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
-import java.util.Map;
+
 import java.util.ArrayList;
-import top.yourzi.dialog.model.BackgroundImageInfo;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 表示单条对话的数据模型。
@@ -63,6 +60,7 @@ public class DialogEntry {
 
     /**
      * 检查是否允许跳过此对话条目
+     *
      * @return 如果允许跳过返回true，否则返回false。如果未设置则默认为true
      */
     public boolean isSkipAllowed() {
@@ -71,6 +69,7 @@ public class DialogEntry {
 
     /**
      * 检查是否应该在此条对话后结束整个对话
+     *
      * @return 如果应该结束对话返回true，否则返回false。如果未设置则默认为false
      */
     public boolean isEndDialog() {
@@ -94,7 +93,7 @@ public class DialogEntry {
         return null;
     }
 
-    public Component placeHolderReplace(String fromString, String toString, JsonElement targetElement) {
+    public Component placeHolderReplace(String fromString, String toString, JsonElement targetElement, HolderLookup.Provider provider) {
         if (targetElement == null || targetElement.isJsonNull()) {
             return Component.empty();
         }
@@ -106,10 +105,10 @@ public class DialogEntry {
 
             Component componentAfterJsonProcessing;
             try {
-                componentAfterJsonProcessing = Component.Serializer.fromJson(jsonObjectCopy);
+                componentAfterJsonProcessing = Component.Serializer.fromJson(jsonObjectCopy, provider);
             } catch (JsonSyntaxException e) {
                 try {
-                    componentAfterJsonProcessing = Component.Serializer.fromJson(targetElement);
+                    componentAfterJsonProcessing = Component.Serializer.fromJson(targetElement, provider);
                 } catch (JsonSyntaxException e2) {
                     return Component.empty();
                 }
@@ -120,15 +119,15 @@ public class DialogEntry {
             MutableComponent combinedText = Component.empty();
             JsonArray jsonArray = targetElement.getAsJsonArray();
             for (JsonElement element : jsonArray) {
-                combinedText.append(placeHolderReplace(fromString, pString, element));
+                combinedText.append(placeHolderReplace(fromString, pString, element, provider));
             }
             return combinedText;
         } else if (targetElement.isJsonPrimitive() && targetElement.getAsJsonPrimitive().isString()) {
             return Component.literal(targetElement.getAsString().replace(fromString, pString));
         }
-        
+
         try {
-            Component component = Component.Serializer.fromJson(targetElement);
+            Component component = Component.Serializer.fromJson(targetElement, provider);
             return replaceTextInComponent(component, fromString, pString);
         } catch (JsonSyntaxException e) {
             return Component.empty();
@@ -152,12 +151,12 @@ public class DialogEntry {
         return newComponent;
     }
 
-    public Component getText(String playerName) {
-        return placeHolderReplace("@i", playerName, text);
+    public Component getText(HolderLookup.Provider provider, String playerName) {
+        return placeHolderReplace("@i", playerName, text, provider);
     }
 
-    public Component getSpeaker(String playerName) {
-        return placeHolderReplace("@i", playerName, speaker);
+    public Component getSpeaker(HolderLookup.Provider provider, String playerName) {
+        return placeHolderReplace("@i", playerName, speaker, provider);
     }
 
     public boolean hasOptions() {
@@ -206,14 +205,14 @@ public class DialogEntry {
             } else if (element.isJsonObject()) {
                 JsonObject nestedObject = element.getAsJsonObject();
                 if (performDeepPlaceholderReplace(nestedObject, placeholder, replacement)) {
-                    elementModifiedInLoop = true; 
+                    elementModifiedInLoop = true;
                 }
             } else if (element.isJsonArray()) {
                 if (performDeepPlaceholderReplaceInArray(element.getAsJsonArray(), placeholder, replacement)) {
-                     elementModifiedInLoop = true;
+                    elementModifiedInLoop = true;
                 }
             }
-            if(elementModifiedInLoop) overallArrayModified = true;
+            if (elementModifiedInLoop) overallArrayModified = true;
         }
         return overallArrayModified;
     }
