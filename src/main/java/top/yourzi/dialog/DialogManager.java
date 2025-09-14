@@ -379,8 +379,13 @@ public class DialogManager {
                     }
 
                     try {
-                        server.getCommands().performPrefixedCommand(commandSource, optionVisibilityCommand);
-                        visibleOptions.add(option);
+                        int result = dispatcher.execute(dispatcher.parse(entryVisibilityCommand, commandSource));
+                        if (result == 1) {
+                            visibleOptions.add(option);
+                        } else {
+                            Dialog.LOGGER.debug("Visibility command '{}' for option '{}' (dialog '{}', entry '{}') for player {} returned {}, option hidden.",
+                                    optionVisibilityCommand, option.getText(levelRegistryAccess, player.getName().getString()) != null ? option.getText(levelRegistryAccess, player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), result);
+                        }
                     } catch (Exception e) {
                         Dialog.LOGGER.warn("Error executing visibility command '{}' for option '{}' (dialog '{}', entry '{}') for player {}: {}. Option hidden.",
                                 optionVisibilityCommand, option.getText(levelRegistryAccess, player.getName().getString()) != null ? option.getText(levelRegistryAccess, player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), e.getMessage());
