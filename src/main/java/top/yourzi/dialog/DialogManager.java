@@ -12,6 +12,7 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.chat.ComponentUtils;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -777,5 +778,21 @@ public class DialogManager {
             singleCommandList.add(command);
             executeCommands(player, singleCommandList);
         }
+    }
+
+    public static Component subText(Component text, int length) {
+        MutableComponent sub = Component.empty();
+        int subLength = 0;
+        for (Component sibling : text.getSiblings()) {
+            int maxLength = length - subLength;
+            String siblingText = sibling.getString(maxLength);
+            if (!siblingText.isEmpty()) {
+                subLength += siblingText.length();
+                sub.append(Component.literal(siblingText).withStyle(sibling.getStyle()));
+            } else {
+                break;
+            }
+        }
+        return sub;
     }
 }

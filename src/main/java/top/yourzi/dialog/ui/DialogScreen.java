@@ -512,7 +512,8 @@ public class DialogScreen extends Screen {
         }
 
         // 渲染对话文本
-        String rawText = dialogEntry.getText(levelRegistryAccess(), playerName).getString();
+        Component text = dialogEntry.getText(levelRegistryAccess(), playerName);
+        String rawText = text.getString();
         if (rawText != null && !rawText.isEmpty()) {
             int maxWidth = dialogBoxWidth - (padding * 2);
             int textAnimationSpeed = ClientConfig.TEXT_ANIMATION_SPEED.get(); // 每秒字符数
@@ -603,15 +604,10 @@ public class DialogScreen extends Screen {
 
             List<net.minecraft.util.FormattedCharSequence> lines;
             if (textFullyDisplayed) {
-                lines = font.split(dialogEntry.getText(levelRegistryAccess(), playerName), maxWidth);
+                lines = font.split(text, maxWidth);
             } else {
-                String animatedString = rawText.substring(0, Math.min(currentCharIndex, rawText.length()));
-                if (animatedString.isEmpty()) {
-                    lines = java.util.Collections.emptyList();
-                } else {
-                    Component animatedTextComponent = Component.literal(animatedString);
-                    lines = font.split(animatedTextComponent, maxWidth);
-                }
+                var animatedString = DialogManager.subText(text, Math.min(currentCharIndex, rawText.length()));
+                lines = font.split(animatedString, maxWidth);
             }
 
             for (net.minecraft.util.FormattedCharSequence line : lines) {
