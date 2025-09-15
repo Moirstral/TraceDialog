@@ -333,6 +333,20 @@ public class DialogManager {
                 .withSuppressedOutput();
 
         CommandDispatcher<CommandSourceStack> dispatcher = server.getCommands().getDispatcher();
+
+        int wait = 60; // 等待世界加载，最多等待3秒
+        while (wait-- > 0 && Minecraft.getInstance().level == null) {
+            try {
+                // 世界尚未加载，轮询等待
+                TimeUnit.MILLISECONDS.sleep(50);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (Minecraft.getInstance().level == null) {
+            Dialog.LOGGER.error("Failed to deep copy originalSequence for ID: {}. No player-specific sequence will be generated.", originalSequence.getId());
+            return null;
+        }
+        RegistryAccess levelRegistryAccess = Minecraft.getInstance().level.registryAccess();
         for (DialogEntry entry : playerSpecificSequence.getEntries()) {
             if (entry == null) {
                 continue;
@@ -354,7 +368,6 @@ public class DialogManager {
                     continue; // 出错则隐藏条目
                 }
             }
-            RegistryAccess levelRegistryAccess = Minecraft.getInstance().level.registryAccess();
 
             //解析条目文本和说话者中的选择器
             // commandSource 和 player 来自方法参数，在此作用域内可用
