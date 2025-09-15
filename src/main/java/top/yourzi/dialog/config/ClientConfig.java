@@ -33,6 +33,13 @@ public class ClientConfig {
     public static ModConfigSpec.BooleanValue SHOW_SPEAKER_NAME; // 显示说话者名称
     public static ModConfigSpec.IntValue TEXT_ANIMATION_SPEED; // 文本逐字显示速度 (每秒字符数，0表示立即显示全部)
 
+    // 覆层模式配置
+    public static ModConfigSpec.BooleanValue SHOW_HISTORY_IN_CHAT;  // 是否在聊天窗口中显示历史记录
+    public static ModConfigSpec.IntValue OVERLAY_DIALOG_BOX_WIDTH; // 对话框宽度
+    public static ModConfigSpec.IntValue OVERLAY_DIALOG_BOX_HEIGHT; // 对话框高度
+    public static ModConfigSpec.IntValue OVERLAY_DIALOG_BOX_PADDING; // 对话框内边距
+    public static ModConfigSpec.IntValue OVERLAY_DIALOG_BOX_OFFSETY; // 对话框Y轴位移
+
     static {
         BUILDER.comment("对话框UI配置").push("ui");
         DIALOG_BOX_WIDTH = BUILDER.comment("对话框宽度").defineInRange("dialogBoxWidth", 320, 0, Integer.MAX_VALUE);
@@ -43,10 +50,10 @@ public class ClientConfig {
                 .comment("对话框内边距")
                 .defineInRange("dialogBoxPadding", 10, 0, Integer.MAX_VALUE);
         DIALOG_TEXT_COLOR = BUILDER
-                .comment("对话文本默认颜色 (ARGB格式)")
+                .comment("对话文本默认颜色 (ARGB格式) 如：0xFFFFFFFF")
                 .define("dialogTextColor", 0xFFFFFFFF);
         DIALOG_BACKGROUND_COLOR = BUILDER
-                .comment("对话框背景默认颜色 (RGB格式)")
+                .comment("对话框背景默认颜色 (RGB格式) 如：0x000000")
                 .define("dialogBackgroundColor", 0x000000);
         DIALOG_BACKGROUND_OPACITY = BUILDER
                 .comment("对话框背景不透明度 (0-255)")
@@ -75,6 +82,24 @@ public class ClientConfig {
         TEXT_ANIMATION_SPEED = BUILDER
                 .comment("文本逐字显示的速度（每秒字符数，设置为0则立即显示全部文本）")
                 .defineInRange("textAnimationSpeed", 20, 0, 1000);
+        BUILDER.pop();
+
+        BUILDER.comment("覆层模式配置").push("overlay");
+        SHOW_HISTORY_IN_CHAT = BUILDER
+                .comment("结束后是否在聊天窗口中显示对话记录")
+                .define("showHistoryInChat", true);
+        OVERLAY_DIALOG_BOX_WIDTH = BUILDER
+                .comment("对话框宽度")
+                .defineInRange("overlayDialogBoxWidth", 200, 0, Integer.MAX_VALUE);
+        OVERLAY_DIALOG_BOX_HEIGHT = BUILDER
+                .comment("对话框高度")
+                .defineInRange("overlayDialogBoxHeight", 45, 0, Integer.MAX_VALUE);
+        OVERLAY_DIALOG_BOX_PADDING = BUILDER
+                .comment("对话框内边距")
+                .defineInRange("overlayDialogBoxPadding", 6, 0, Integer.MAX_VALUE);
+        OVERLAY_DIALOG_BOX_OFFSETY = BUILDER
+                .comment("对话框Y轴位移")
+                .defineInRange("overlayDialogBoxOffsetY", 45, 0, Integer.MAX_VALUE);
         BUILDER.pop();
     }
 

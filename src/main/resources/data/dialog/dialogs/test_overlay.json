@@ -1,0 +1,48 @@
+{
+  "id": "test_overlay",
+  "type": "OVERLAY",
+  "title": "Test Overlay",
+  "start": "start",
+  "entries": [
+    {
+      "id": "start",
+      "speaker": {
+        "translate": "dialog.test_dialog.speaker.tlipoca",
+        "color": "red"
+      },
+      "text": [
+        {
+          "translate": "dialog.test_overlay.entry.start.text"
+        }
+      ],
+      "portraits": [
+        {
+          "path": "tlipoca.png",
+          "position": "RIGHT",
+          "brightness": 1.0,
+          "animationType": "FADE_IN"
+        }
+      ],
+      "command": [
+        "time set day"
+      ]
+    },
+    {
+      "id": "end",
+      "speaker": {
+        "translate": "dialog.test_dialog.speaker.tlipoca",
+        "color": "red"
+      },
+      "text": {
+        "translate": "dialog.test_overlay.entry.end.text"
+      },
+      "portraits": [
+        {
+          "path": "tlipoca.png",
+          "position": "LEFT",
+          "animationType": "FADE_OUT"
+        }
+      ]
+    }
+  ]
+}

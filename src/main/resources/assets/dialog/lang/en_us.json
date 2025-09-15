@@ -38,6 +38,7 @@
   "dialog.manager.sequence_not_found": "Dialog sequence not found: %s",
   "dialog.manager.no_entries": "No entries found in dialog sequence: %s",
   "dialog.manager.target_not_found": "Target dialog entry not found: %s",
+  "dialog.manager.sequence_queue.full": "The dialog box to be displayed is full, the current dialog [%s] cannot be displayed",
 
   "dialog.test_dialog.speaker.tlipoca": "Tlipoca",
   "dialog.test_dialog.speaker.leaf": "Little Leaf",
@@ -72,5 +73,12 @@
   "dialog.test_dialog.option.hidden_option": "Hidden option, only visible to players in survival mode",
   "dialog.test_dialog.option.weather_rain": "Set weather to rain",
   "dialog.test_dialog.option.weather_clear": "Set weather to clear",
-  "dialog.test_dialog.option.weather_thunder": "Set weather to thunder"
+  "dialog.test_dialog.option.weather_thunder": "Set weather to thunder",
+
+  "dialog.test_overlay.entry.start.text": "Welcome, @i! This is a dialog overlay example. Overlay mode does not affect operation, similar to subtitles.",
+  "dialog.test_overlay.entry.end.text": "If nothing unexpected happens, it should be dawn now.",
+
+  "dialog.chat.history.title": "=============== %s Start ===============",
+  "dialog.chat.history.entry": "%s: %s",
+  "dialog.chat.history.footer": "================ %s End ================"
 }

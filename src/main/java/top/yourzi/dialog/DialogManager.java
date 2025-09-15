@@ -26,10 +26,12 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.NotNull;
 import top.yourzi.dialog.config.ClientConfig;
 import top.yourzi.dialog.model.*;
 import top.yourzi.dialog.network.NetworkHandler;
 import top.yourzi.dialog.ui.BackgroundImageDisplayData;
+import top.yourzi.dialog.ui.DialogOverlay;
 import top.yourzi.dialog.ui.DialogScreen;
 import top.yourzi.dialog.ui.PortraitDisplayData;
 
@@ -38,6 +40,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class DialogManager {
@@ -49,6 +53,9 @@ public class DialogManager {
     private final Map<String, DialogSequence> dialogSequences = new HashMap<>();
     // 当前显示的对话序列
     private DialogSequence currentSequence;
+    // 当前等待显示的对话序列
+    private final LinkedBlockingQueue<WaitingDialogSequence> waitingDialogSequences = new LinkedBlockingQueue<>();
+    private static Thread pollingThread;
     // 当前显示的对话条目
     private DialogEntry currentEntry;
     // 对话历史记录
@@ -70,6 +77,12 @@ public class DialogManager {
     public static final int ANIMATION_DURATION_MS = 300; // 动画持续时间，单位毫秒
 
     private DialogManager() {
+    }
+
+    protected record WaitingDialogSequence(DialogSequence dialogSequence, Integer speakerEntityId) {
+        WaitingDialogSequence(DialogSequence dialogSequence) {
+            this(dialogSequence, null);
+        }
     }
 
     /**
@@ -136,7 +149,7 @@ public class DialogManager {
                 while ((line = contentReader.readLine()) != null) {
                     jsonContent.append(line);
                 }
-                Dialog.LOGGER.debug("JSON: {}", jsonContent.toString());
+                Dialog.LOGGER.debug("JSON: {}", jsonContent);
             } catch (IOException ioe) {
                 Dialog.LOGGER.error("Unable to read problematic JSON content for debugging. {}", ioe.getMessage());
             }
@@ -444,26 +457,7 @@ public class DialogManager {
             sendPlayerMessage(Component.translatable("dialog.manager.requesting_from_server", dialogId));
             return;
         }
-
-        clearDialogHistory(); // 开始新对话时清空历史记录
-        currentSequence = sequence;
-        currentEntry = sequence.getFirstEntry();
-        addDialogToHistory(currentEntry); // 将第一个条目加入历史记录
-
-        if (currentEntry == null) {
-            Dialog.LOGGER.error("No entries found in dialog sequence: {}", dialogId);
-            sendPlayerMessage(Component.translatable("dialog.manager.no_entries", dialogId));
-            return;
-        }
-        // 获取玩家名称
-        String playerName = "";
-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.getGameProfile() != null) {
-            playerName = Minecraft.getInstance().player.getGameProfile().getName();
-        }
-        this.currentDialogPlayerName = playerName;
-
-        // 显示对话界面
-        Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, playerName));
+        putDialogQueue(new WaitingDialogSequence(sequence));
     }
 
     /**
@@ -474,56 +468,14 @@ public class DialogManager {
      */
     @OnlyIn(Dist.CLIENT)
     public void receiveAndShowPlayerSpecificDialog(String dialogId, String sequenceJson) {
-        if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide) return;
-
-        stopAutoPlay(); // Reset auto-play
-
-        DialogSequence playerSequence;
-        try {
-            playerSequence = GSON.fromJson(sequenceJson, DialogSequence.class);
-        } catch (JsonSyntaxException e) {
-            Dialog.LOGGER.error("Failed to parse player-specific dialog sequence JSON for ID {}: {}", dialogId, e.getMessage());
-            sendPlayerMessage(Component.translatable("dialog.manager.received_sequence_parse_failed", dialogId, e.getMessage()));
-            return;
-        }
-
-        if (playerSequence == null || playerSequence.getId() == null) {
-            Dialog.LOGGER.warn("Parsed player-specific dialog sequence is null or has no ID. Original ID: {}", dialogId);
-            sendPlayerMessage(Component.translatable("dialog.manager.received_sequence_empty", dialogId));
-            return;
-        }
-
-        if (!dialogId.equals(playerSequence.getId())) {
-            Dialog.LOGGER.warn("Dialog ID mismatch! Expected (from packet): {}, ID in parsed sequence: {}. Using ID from sequence.", dialogId, playerSequence.getId());
-        }
-
-        clearDialogHistory();
-        currentSequence = playerSequence;
-        currentEntry = playerSequence.getFirstEntry();
-
-        if (currentEntry == null) {
-            Dialog.LOGGER.error("No entries found in player-specific dialog sequence: {}", playerSequence.getId());
-            sendPlayerMessage(Component.translatable("dialog.manager.no_entries", playerSequence.getId()));
-            currentSequence = null;
-            return;
-        }
-
-        addDialogToHistory(currentEntry);
-
-        String playerName = "";
-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.getGameProfile() != null) {
-            playerName = Minecraft.getInstance().player.getGameProfile().getName();
-        }
-        this.currentDialogPlayerName = playerName;
-
-        Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
+        receiveAndShowPlayerSpecificDialogWithEntity(dialogId, sequenceJson, null);
     }
 
     /**
      * 接收并显示带实体信息的玩家特定对话序列
      */
     @OnlyIn(Dist.CLIENT)
-    public void receiveAndShowPlayerSpecificDialogWithEntity(String dialogId, String sequenceJson, int speakerEntityId) {
+    public void receiveAndShowPlayerSpecificDialogWithEntity(String dialogId, String sequenceJson, Integer speakerEntityId) {
         if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide) return;
 
         stopAutoPlay(); // Reset auto-play
@@ -547,33 +499,81 @@ public class DialogManager {
             Dialog.LOGGER.warn("Dialog ID mismatch! Expected (from packet): {}, ID in parsed sequence: {}. Using ID from sequence.", dialogId, playerSequence.getId());
         }
 
-        // 获取说话实体
-        net.minecraft.world.entity.Entity speakerEntity = null;
-        if (Minecraft.getInstance().level != null) {
-            speakerEntity = Minecraft.getInstance().level.getEntity(speakerEntityId);
+        // 插入队列
+        putDialogQueue(new WaitingDialogSequence(playerSequence, speakerEntityId));
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private void putDialogQueue(@NotNull WaitingDialogSequence waitingDialogSequence) {
+        if (!waitingDialogSequences.offer(waitingDialogSequence)) {
+            Dialog.LOGGER.warn("Failed to insert dialog sequence into queue. Sequence ID: {}", waitingDialogSequence.dialogSequence().getId());
+            sendPlayerMessage(Component.translatable("dialog.manager.sequence_queue.full", waitingDialogSequence.dialogSequence().getId()));
         }
-
-        clearDialogHistory();
-        currentSequence = playerSequence;
-        currentEntry = playerSequence.getFirstEntry();
-
-        if (currentEntry == null) {
-            Dialog.LOGGER.error("No entries found in player-specific dialog sequence: {}", playerSequence.getId());
-            sendPlayerMessage(Component.translatable("dialog.manager.no_entries", playerSequence.getId()));
-            currentSequence = null;
+        if (pollingThread != null && pollingThread.isAlive()) {
             return;
         }
+        // 启动对话轮询线程
+        pollingThread = new Thread(() -> {
+            while (!waitingDialogSequences.isEmpty()) {
+                pollingDialogSequence();
+                try {
+                    // 能被用户感知到这延迟，只会是对话框排队了，那两个对话框之间有最多1秒延迟并不会有影响
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (Throwable ignored) {
+                }
+            }
+        }, Dialog.MODID + "PollingThread");
+        pollingThread.start();
+    }
 
-        addDialogToHistory(currentEntry);
-
-        String playerName = "";
-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.getGameProfile() != null) {
-            playerName = Minecraft.getInstance().player.getGameProfile().getName();
+    @OnlyIn(Dist.CLIENT)
+    public void pollingDialogSequence() {
+        if (Minecraft.getInstance().player == null || currentSequence != null || currentEntry != null) {
+            return;
         }
-        this.currentDialogPlayerName = playerName;
+        var next = waitingDialogSequences.poll();
+        if (next == null) {
+            return;
+        }
+        currentSequence = next.dialogSequence();
+        var speakerEntityId = next.speakerEntityId();
 
-        // 显示带实体信息的对话
-        Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName, speakerEntity));
+        // 确保在主线程显示对话界面
+        Minecraft.getInstance().execute(() -> {
+            // 获取说话实体
+            net.minecraft.world.entity.Entity speakerEntity = null;
+            if (Minecraft.getInstance().level != null && speakerEntityId != null) {
+                speakerEntity = Minecraft.getInstance().level.getEntity(speakerEntityId);
+            }
+
+            clearDialogHistory();
+            currentEntry = currentSequence.getFirstEntry();
+
+            if (currentEntry == null) {
+                Dialog.LOGGER.error("No entries found in player-specific dialog sequence: {}", currentSequence.getId());
+                sendPlayerMessage(Component.translatable("dialog.manager.no_entries", currentSequence.getId()));
+                currentSequence = null;
+                return;
+            }
+
+            addDialogToHistory(currentEntry);
+
+            // 获取玩家名称
+            String playerName = "";
+            if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.getGameProfile() != null) {
+                playerName = Minecraft.getInstance().player.getGameProfile().getName();
+            }
+            this.currentDialogPlayerName = playerName;
+
+            // 显示对话
+            if (currentSequence.getType() == DialogSequence.DialogType.OVERLAY) {
+                // 覆层形式的对话
+                DialogOverlay.getInstance().setDialogEntry(currentSequence, currentEntry);
+            } else {
+                // 屏幕形式的对话
+                Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName, speakerEntity));
+            }
+        });
     }
 
     /**
@@ -646,6 +646,39 @@ public class DialogManager {
 
         // 更新对话界面
         Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
+    }
+
+    /**
+     * 显示对话序列中的下一条对话。
+     */
+    @OnlyIn(Dist.CLIENT)
+    public void showNextDialogOverlay() {
+        if (currentSequence == null || currentEntry == null) {
+            return;
+        }
+        // 检查当前对话条目是否设置了结束对话标记
+        if (currentEntry.isEndDialog()) {
+            currentSequence = null;
+            currentEntry = null;
+            return;
+        }
+
+        DialogEntry nextEntry = currentSequence.getNextEntry(currentEntry);
+        if (nextEntry == null) {
+            currentSequence = null;
+            currentEntry = null;
+            DialogOverlay.getInstance().close();
+            return;
+        }
+
+        currentEntry = nextEntry;
+        addDialogToHistory(currentEntry); // 将后续条目加入历史记录
+
+        // 在创建新的DialogScreen之前停止当前音频
+        stopCurrentAudio();
+
+        // 更新对话界面
+        DialogOverlay.getInstance().setDialogEntry(currentSequence, currentEntry);
     }
 
     /**
@@ -883,7 +916,7 @@ public class DialogManager {
         RenderSystem.disableBlend();
     }
 
-    public static void renderPortrait(GuiGraphics guiGraphics, List<PortraitDisplayData> portraitDisplayList, int screenWidth, int screenHeight) {
+    public static void renderPortrait(GuiGraphics guiGraphics, List<PortraitDisplayData> portraitDisplayList, int screenWidth, int screenHeight, float portraitHeightPercentage, int offsetX, int offsetY) {
         for (PortraitDisplayData displayData : portraitDisplayList) {
             if (displayData.isLoadedSuccessfully() && displayData.getResourceLocation() != null && displayData.getActualWidth() > 0 && displayData.getActualHeight() > 0) {
                 RenderSystem.setShader(GameRenderer::getPositionTexShader);
@@ -892,7 +925,7 @@ public class DialogManager {
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
 
-                int portraitRenderHeight = (int) (screenHeight * 0.7); // 固定高度
+                int portraitRenderHeight = (int) (screenHeight * portraitHeightPercentage); // 固定高度
                 float aspectRatio = (float) displayData.getActualWidth() / displayData.getActualHeight();
                 int portraitRenderWidth = (int) (portraitRenderHeight * aspectRatio); // 等比例计算宽度
 
@@ -944,11 +977,11 @@ public class DialogManager {
 
                 baseY = switch (displayData.getPosition()) {
                     case LEFT -> {
-                        baseX = 20;
+                        baseX = offsetX - scaledWidth >= 0 ? (offsetX - scaledWidth) : 20;
                         yield screenHeight - scaledHeight;
                     }
                     case RIGHT -> {
-                        baseX = screenWidth - scaledWidth - 20;
+                        baseX = offsetX > scaledWidth ? (screenWidth - offsetX) : (screenWidth - scaledWidth - 20);
                         yield screenHeight - scaledHeight;
                     }
                     default -> {
@@ -958,7 +991,7 @@ public class DialogManager {
                 };
 
                 int finalX = baseX + (int) xOffset;
-                int finalY = baseY + (int) yOffset;
+                int finalY = baseY + (int) yOffset - offsetY;
 
                 guiGraphics.blit(displayData.getResourceLocation(), finalX, finalY, 0, 0, scaledWidth, scaledHeight, scaledWidth, scaledHeight);
                 RenderSystem.disableBlend();

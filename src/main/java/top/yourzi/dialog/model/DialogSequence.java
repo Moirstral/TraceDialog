@@ -3,6 +3,7 @@ package top.yourzi.dialog.model;
 import com.google.gson.annotations.SerializedName;
 import lombok.Getter;
 import lombok.Setter;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,6 +15,8 @@ import java.util.List;
 public class DialogSequence {
     // 对话序列的唯一标识符
     private String id;
+    // 对话框类型 可选值：OVERLAY、SCREEN 默认为SCREEN
+    private DialogType type;
     // 对话序列的标题
     private String title;
     // 对话序列的描述
@@ -33,6 +36,13 @@ public class DialogSequence {
      */
     public boolean isCloseAllowed() {
         return allowClose != null && allowClose;
+    }
+
+    public DialogType getType() {
+        if (type == null) {
+            type = DialogType.SCREEN;
+        }
+        return type;
     }
 
     /**
@@ -117,5 +127,16 @@ public class DialogSequence {
         }
         
         return remainingEntries;
+    }
+
+    public enum DialogType {
+        /**
+         * 玩家HUD界面，不影响行动
+         */
+        OVERLAY,
+        /**
+         * 屏幕，影响行动
+         */
+        SCREEN
     }
 }

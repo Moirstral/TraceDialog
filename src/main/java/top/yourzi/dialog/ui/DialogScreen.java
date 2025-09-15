@@ -61,7 +61,7 @@ public class DialogScreen extends Screen {
     private int dialogBoxWidth;
     private int dialogBoxHeight;
     // 对话框背景图片
-    private String dialogBackgroundImagePath;
+    private final String dialogBackgroundImagePath;
     // 文本动画相关
     private int currentCharIndex = 0;
     private long lastCharTime = 0;
@@ -336,7 +336,7 @@ public class DialogScreen extends Screen {
 
         // 渲染立绘
         if (!portraitDisplayList.isEmpty()) {
-            DialogManager.renderPortrait(guiGraphics, portraitDisplayList, this.width, this.height);
+            DialogManager.renderPortrait(guiGraphics, portraitDisplayList, this.width, this.height, 0.7f, this.dialogBoxX, 0);
         }
 
         // 渲染对话框背景
@@ -516,7 +516,7 @@ public class DialogScreen extends Screen {
                         DialogManager.getInstance().executeCommands(this.getMinecraft().player, dialogEntry.getCommands(), this.speakerEntity);
                     }
                     DialogManager.getInstance().showNextDialog();
-                    return; // 立即跳到下一条，避免渲染当前帧的剩余部分
+                    // 立即跳到下一条，避免渲染当前帧的剩余部分
                 }
             }
         } else {

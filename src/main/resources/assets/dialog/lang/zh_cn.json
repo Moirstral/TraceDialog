@@ -38,6 +38,7 @@
   "dialog.manager.sequence_not_found": "未找到对话序列: %s",
   "dialog.manager.no_entries": "对话序列中没有条目: %s",
   "dialog.manager.target_not_found": "未找到目标对话条目: %s",
+  "dialog.manager.sequence_queue.full": "待显示的对话框满了,当前对话框 [%s] 无法显示",
 
   "dialog.test_dialog.speaker.tlipoca": "特莉波卡",
   "dialog.test_dialog.speaker.leaf": "小叶子",
@@ -72,5 +73,12 @@
   "dialog.test_dialog.option.hidden_option": "这是隐藏条件选项，仅有生存模式下的玩家可见",
   "dialog.test_dialog.option.weather_rain": "天气调为雨天",
   "dialog.test_dialog.option.weather_clear": "天气调为晴天",
-  "dialog.test_dialog.option.weather_thunder": "天气调为雷雨"
+  "dialog.test_dialog.option.weather_thunder": "天气调为雷雨",
+
+  "dialog.test_overlay.entry.start.text": "@i, 欢迎使用本模组，这是一个对话覆层的示例，覆层模式不影响操作，类似字幕。",
+  "dialog.test_overlay.entry.end.text": "如果不出意外，现在已被设置为白天。",
+
+  "dialog.chat.history.title": "=============== %s 开始 ===============",
+  "dialog.chat.history.entry": "%s: %s",
+  "dialog.chat.history.footer": "=============== %s 结束 ==============="
 }
