@@ -528,8 +528,19 @@ public class DialogManager {
 
     @OnlyIn(Dist.CLIENT)
     public void pollingDialogSequence() {
-        if (Minecraft.getInstance().player == null || currentSequence != null || currentEntry != null) {
+        if (Minecraft.getInstance().player == null || Minecraft.getInstance().player.isDeadOrDying()) {
             return;
+        }
+        if (currentSequence != null && currentEntry != null) {
+            if (currentSequence.getType() == DialogSequence.DialogType.SCREEN && Minecraft.getInstance().screen == null) {
+                // 如果当前对话序列不为空，但当前没有已打开的屏幕，则清理当前对话序列
+                // 此种情况可能是因为玩家在对话框中异常关闭了屏幕，如死亡后自动打开了死亡屏
+                currentSequence = null;
+                currentEntry = null;
+                stopCurrentAudio();
+            } else {
+                return;
+            }
         }
         var next = waitingDialogSequences.poll();
         if (next == null) {

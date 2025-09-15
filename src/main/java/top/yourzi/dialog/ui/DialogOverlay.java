@@ -206,6 +206,10 @@ public class DialogOverlay implements LayeredDraw.Layer {
             clear();
             return;
         }
+        if (this.minecraft.player != null && this.minecraft.player.isDeadOrDying()) {
+            // 玩家死亡，停止渲染，复活后会继续
+            return;
+        }
         if (this.minecraft.isPaused() || (this.minecraft.screen != null && this.minecraft.screen.isPauseScreen())) {
             // 暂停时，不渲染
             return;
