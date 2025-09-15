@@ -78,6 +78,13 @@ public class NetworkHandler {
                 ShowDialogWithEntityPacket.STREAM_CODEC,
                 ShowDialogWithEntityPacket::handle
         );
+
+        // 注册从服务端到客户端的带实体信息的对话显示包
+        registrar.playToServer(
+                PlayerInvinciblePacket.TYPE,
+                PlayerInvinciblePacket.STREAM_CODEC,
+                PlayerInvinciblePacket::handle
+        );
     }
 
     /**
@@ -166,6 +173,20 @@ public class NetworkHandler {
             PacketDistributor.sendToServer(new ExecuteServerCommandPacket(command, executorEntityId));
         } else {
             Dialog.LOGGER.warn("Cannot send ExecuteServerCommandPacket with entity: not on client or no connection.");
+        }
+    }
+
+    /**
+     * 玩家向服务端发送设置玩家无敌的网络包
+     */
+    public static void sendPlayerInvinciblePacketToServer(int status) {
+        if (status < 0 || status > 2) {
+            Dialog.LOGGER.warn("Invalid status for PlayerInvinciblePacket: {}", status);
+        }
+        if (Minecraft.getInstance().getConnection() != null) {
+            PacketDistributor.sendToServer(new PlayerInvinciblePacket((byte) status));
+        } else {
+            Dialog.LOGGER.warn("Cannot send PlayerInvinciblePacket: not on client or no connection.");
         }
     }
 }

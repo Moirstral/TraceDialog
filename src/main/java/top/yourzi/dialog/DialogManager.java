@@ -575,12 +575,21 @@ public class DialogManager {
                 playerName = Minecraft.getInstance().player.getGameProfile().getName();
             }
             this.currentDialogPlayerName = playerName;
-
             // 显示对话
             if (currentSequence.getType() == DialogSequence.DialogType.OVERLAY) {
                 // 覆层形式的对话
                 DialogOverlay.getInstance().setDialogEntry(currentSequence, currentEntry);
             } else {
+                // 发送玩家开始无敌消息
+                int status = 0;
+                if (currentSequence.isInvisible()) {
+                    status = 2;
+                } else if (currentSequence.isInvulnerable()) {
+                    status = 1;
+                }
+                if (status != 0) {
+                    NetworkHandler.sendPlayerInvinciblePacketToServer(status);
+                }
                 // 屏幕形式的对话
                 Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName, speakerEntity));
             }
@@ -644,6 +653,10 @@ public class DialogManager {
         if (nextEntry == null) {
             // 对话结束，关闭对话界面
             Minecraft.getInstance().setScreen(null);
+            // 发送玩家结束无敌消息
+            if (currentSequence.isInvisible() || currentSequence.isInvulnerable()) {
+                NetworkHandler.sendPlayerInvinciblePacketToServer(0);
+            }
             currentSequence = null;
             currentEntry = null;
             return;

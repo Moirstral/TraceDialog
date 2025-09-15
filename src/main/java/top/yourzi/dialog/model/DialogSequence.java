@@ -29,9 +29,14 @@ public class DialogSequence {
     // 是否允许通过ESC键关闭对话，默认为false
     @SerializedName("allowClose")
     private Boolean allowClose;
+    // 开启界面后是否无敌
+    private boolean invulnerable = false;
+    // 开启界面后是否隐身, 如果为 true 则 invulnerable 默认且必定为 true
+    private boolean invisible = false;
 
     /**
      * 检查是否允许关闭对话。
+     *
      * @return 如果允许关闭则返回true，否则返回false。默认为false。
      */
     public boolean isCloseAllowed() {
@@ -47,13 +52,14 @@ public class DialogSequence {
 
     /**
      * 获取对话序列的第一个对话条目。
+     *
      * @return 第一个对话条目；如果序列为空或未定义起始ID且无条目，则返回null。
      */
     public DialogEntry getFirstEntry() {
         if (entries == null || entries.length == 0) {
             return null;
         }
-        
+
         if (startId != null && !startId.isEmpty()) {
             for (DialogEntry entry : entries) {
                 if (startId.equals(entry.getId())) {
@@ -61,12 +67,13 @@ public class DialogSequence {
                 }
             }
         }
-        
+
         return entries[0];
     }
-    
+
     /**
      * 根据ID查找对话条目。
+     *
      * @param id 对话条目的ID。
      * @return 对应的对话条目；如果未找到，则返回null。
      */
@@ -74,18 +81,19 @@ public class DialogSequence {
         if (id == null || id.isEmpty() || entries == null) {
             return null;
         }
-        
+
         for (DialogEntry entry : entries) {
             if (id.equals(entry.getId())) {
                 return entry;
             }
         }
-        
+
         return null;
     }
-    
+
     /**
      * 获取指定对话条目的下一个对话条目。
+     *
      * @param currentEntry 当前的对话条目。
      * @return 下一个对话条目；如果没有下一个条目，则返回null。
      */
@@ -93,7 +101,7 @@ public class DialogSequence {
         if (currentEntry == null || entries == null || entries.length == 0) {
             return null;
         }
-        
+
         // 如果当前对话指定了下一个对话的ID，则查找对应的对话条目
         if (currentEntry.getNextId() != null && !currentEntry.getNextId().isEmpty()) {
             return findEntryById(currentEntry.getNextId());
@@ -105,12 +113,13 @@ public class DialogSequence {
                 return entries[i + 1];
             }
         }
-        
+
         return null;
     }
 
     /**
      * 获取指定对话条目之后的所有对话条目（包含有指令的条目）。
+     *
      * @param currentEntry 当前的对话条目。
      * @return 后续所有对话条目的列表。
      */
@@ -125,7 +134,7 @@ public class DialogSequence {
             remainingEntries.add(nextEntry);
             nextEntry = getNextEntry(nextEntry);
         }
-        
+
         return remainingEntries;
     }
 
