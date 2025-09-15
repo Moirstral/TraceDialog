@@ -460,10 +460,11 @@ public class DialogScreen extends Screen {
                 var animatedString = DialogManager.subText(text, Math.min(currentCharIndex, rawText.length()));
                 lines = font.split(animatedString, maxWidth);
             }
-
-            for (net.minecraft.util.FormattedCharSequence line : lines) {
-                guiGraphics.drawString(font, line, textX, textY, ClientConfig.DIALOG_TEXT_COLOR.get());
-                textY += font.lineHeight;
+            int maxHeight = dialogBoxHeight - (padding * 2) - font.lineHeight - 5;
+            int lineHeight = font.lineHeight + 2;
+            for (int i = Math.max(0, lines.size() - (maxHeight / lineHeight)); i < lines.size(); i++) {
+                guiGraphics.drawString(font, lines.get(i), textX, textY, ClientConfig.DIALOG_TEXT_COLOR.get());
+                textY += lineHeight;
             }
         }
 
