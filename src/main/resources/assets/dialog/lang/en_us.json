@@ -22,6 +22,7 @@
   "dialog.ui.close_history": "Close History",
   "dialog.ui.esc": "Exit Dialog",
   "dialog.ui.confirm_esc": "Do you want to skip the entire dialog?",
+  "dialog.ui.auto": "[AUTO]",
   
   "dialog.manager.requesting_from_server": "Requesting dialog files from server...",
   "dialog.manager.loading": "Loading dialog files, path: %s",

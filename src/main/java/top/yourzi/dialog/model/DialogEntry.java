@@ -54,6 +54,9 @@ public class DialogEntry {
     // 背景图片信息
     @SerializedName("background_image")
     private BackgroundImageInfo backgroundImage;
+    // 背景图片信息
+    @SerializedName("dialog_image")
+    private String dialogImage;
     // 对话音频文件路径（相对于assets/dialog/sounds/目录）
     @SerializedName("audio")
     private String audioPath;

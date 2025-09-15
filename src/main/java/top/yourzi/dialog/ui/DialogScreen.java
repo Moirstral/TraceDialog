@@ -1,6 +1,5 @@
 package top.yourzi.dialog.ui;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.ImageButton;
@@ -8,7 +7,6 @@ import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.components.WidgetSprites;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
@@ -17,7 +15,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
@@ -29,24 +26,19 @@ import top.yourzi.dialog.Dialog;
 import top.yourzi.dialog.DialogManager;
 import top.yourzi.dialog.config.ClientConfig;
 import top.yourzi.dialog.config.ServerConfig;
-import top.yourzi.dialog.model.*;
-import top.yourzi.dialog.util.STBBackendImage;
+import top.yourzi.dialog.model.BackgroundAnimationType;
+import top.yourzi.dialog.model.DialogEntry;
+import top.yourzi.dialog.model.DialogOption;
+import top.yourzi.dialog.model.DialogSequence;
 
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * 对话界面，用于显示对话框和立绘
  */
 @SuppressWarnings("removal")
 public class DialogScreen extends Screen {
-    private static final int ANIMATION_DURATION_MS = 300; // 动画持续时间，单位毫秒
-    private static final int BACKGROUND_FADE_DURATION_MS = 500; // 背景图片淡入淡出持续时间，单位毫秒
     // 对话序列和当前对话条目
     private final DialogSequence dialogSequence;
     private final DialogEntry dialogEntry;
@@ -68,6 +60,8 @@ public class DialogScreen extends Screen {
     private int dialogBoxY;
     private int dialogBoxWidth;
     private int dialogBoxHeight;
+    // 对话框背景图片
+    private String dialogBackgroundImagePath;
     // 文本动画相关
     private int currentCharIndex = 0;
     private long lastCharTime = 0;
@@ -125,6 +119,12 @@ public class DialogScreen extends Screen {
                 this.backgroundImageDisplayData.animationStartTime = System.currentTimeMillis();
             }
             this.backgroundFadeStartTime = System.currentTimeMillis(); // 初始化背景淡入开始时间
+        }
+
+        if (dialogEntry.getDialogImage() != null && !dialogEntry.getDialogImage().isEmpty()) {
+            this.dialogBackgroundImagePath = dialogEntry.getDialogImage();
+        } else {
+            this.dialogBackgroundImagePath = "textures/dialog_background/background.png";
         }
 
         // 加载多个立绘资源
@@ -200,45 +200,6 @@ public class DialogScreen extends Screen {
     }
 
     // 音频播放方法已移至DialogManager进行全局管理
-
-    // 管理背景图片显示数据
-    private static class BackgroundImageDisplayData {
-        private final ResourceLocation imageLocation;
-        private final BackgroundRenderOption renderOption;
-        private final BackgroundAnimationType animationType;
-        private STBBackendImage image;
-        private boolean loadedSuccessfully = false;
-        private int imageWidth;
-        private int imageHeight;
-        private long animationStartTime = -1;
-
-        public BackgroundImageDisplayData(BackgroundImageInfo backgroundImageInfo) {
-            this.imageLocation = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "textures/backgrounds/" + backgroundImageInfo.getPath());
-            this.renderOption = backgroundImageInfo.getRenderOption();
-            this.animationType = backgroundImageInfo.getAnimationType() != null ? backgroundImageInfo.getAnimationType() : BackgroundAnimationType.NONE;
-            loadResource();
-        }
-
-        private void loadResource() {
-            try {
-                Optional<Resource> resourceOptional = Minecraft.getInstance().getResourceManager().getResource(imageLocation);
-                if (resourceOptional.isPresent()) {
-                    try (InputStream inputStream = resourceOptional.get().open()) {
-                        this.image = STBBackendImage.read(inputStream);
-                        this.imageWidth = image.getWidth();
-                        this.imageHeight = image.getHeight();
-                        this.loadedSuccessfully = true;
-                    } catch (IOException e) {
-                        Dialog.LOGGER.error("Failed to load background image: {}", imageLocation, e);
-                    }
-                } else {
-                    Dialog.LOGGER.warn("Background image resource not found: {}", imageLocation);
-                }
-            } catch (Exception e) {
-                Dialog.LOGGER.error("Error accessing background image resource: {}", imageLocation, e);
-            }
-        }
-    }
 
     @Override
     protected void init() {
@@ -362,7 +323,7 @@ public class DialogScreen extends Screen {
 
         // 首先渲染背景图片 (如果存在且加载成功)
         if (this.backgroundImageDisplayData != null && this.backgroundImageDisplayData.loadedSuccessfully) {
-            renderBackgroundImage(guiGraphics, this.backgroundImageDisplayData);
+            DialogManager.renderBackgroundImage(guiGraphics, this.backgroundImageDisplayData, isClosing, backgroundFadeOutStartTime, this.width, this.height);
         }
 
         // 如果正在显示历史记录，则渲染历史记录界面
@@ -375,125 +336,15 @@ public class DialogScreen extends Screen {
 
         // 渲染立绘
         if (!portraitDisplayList.isEmpty()) {
-            for (PortraitDisplayData displayData : portraitDisplayList) {
-                if (displayData.loadedSuccessfully && displayData.resourceLocation != null && displayData.actualWidth > 0 && displayData.actualHeight > 0) {
-                    RenderSystem.setShader(GameRenderer::getPositionTexShader);
-
-                    RenderSystem.setShaderTexture(0, displayData.resourceLocation);
-                    RenderSystem.enableBlend();
-                    RenderSystem.defaultBlendFunc();
-
-                    int portraitRenderHeight = (int) (this.height * 0.7); // 固定高度
-                    float aspectRatio = (float) displayData.actualWidth / displayData.actualHeight;
-                    int portraitRenderWidth = (int) (portraitRenderHeight * aspectRatio); // 等比例计算宽度
-
-                    int baseX = 0, baseY = 0;
-                    float currentScale = displayData.size; // 使用size属性控制缩放
-                    float currentAlpha = 1.0f;
-                    float yOffset = 0;
-                    float xOffset = 0;
-
-                    long currentTime = System.currentTimeMillis();
-                    float progress = 1.0f;
-
-                    if (ClientConfig.ENABLE_PORTRAIT_ANIMATIONS.get() && displayData.animationType != PortraitAnimationType.NONE && displayData.animationStartTime != -1) {
-                        long elapsedTime = currentTime - displayData.animationStartTime;
-                        if (elapsedTime < ANIMATION_DURATION_MS) {
-                            progress = (float) elapsedTime / ANIMATION_DURATION_MS;
-                        } else {
-                            displayData.animationStartTime = -1;
-                        }
-
-                        switch (displayData.animationType) {
-                            case FADE_IN:
-                                currentAlpha = Mth.lerp(progress, 0f, 1f);
-                                break;
-                            case SLIDE_IN_FROM_BOTTOM:
-                                yOffset = Mth.lerp(progress, 50f, 0f);
-                                break;
-                            case BOUNCE:
-                                if (progress < 0.5f) {
-                                    yOffset = Mth.lerp(progress * 2, 0f, -20f);
-                                } else {
-                                    yOffset = Mth.lerp((progress - 0.5f) * 2, -20f, 0f);
-                                }
-                                break;
-                            case NONE:
-                            default:
-                                break;
-                        }
-                    }
-                    if (displayData.brightness == 0.0f) {
-                        RenderSystem.setShaderColor(0.0f, 0.0f, 0.0f, 1.0f); // 纯黑剪影，完全不透明
-                    } else {
-                        //使用brightness调整RGB，currentAlpha处理透明度
-                        RenderSystem.setShaderColor(displayData.brightness, displayData.brightness, displayData.brightness, currentAlpha);
-                    }
-
-                    int scaledWidth = (int) (portraitRenderWidth * currentScale);
-                    int scaledHeight = (int) (portraitRenderHeight * currentScale);
-
-                    switch (displayData.position) {
-                        case LEFT:
-                            baseX = 20;
-                            baseY = this.height - scaledHeight;
-                            break;
-                        case RIGHT:
-                            baseX = this.width - scaledWidth - 20;
-                            baseY = this.height - scaledHeight;
-                            break;
-                        case CENTER:
-                        default:
-                            baseX = (this.width - scaledWidth) / 2;
-                            baseY = this.height - scaledHeight;
-                            break;
-                    }
-
-                    int finalX = baseX + (int) xOffset;
-                    int finalY = baseY + (int) yOffset;
-
-                    guiGraphics.blit(displayData.resourceLocation, finalX, finalY, 0, 0, scaledWidth, scaledHeight, scaledWidth, scaledHeight);
-                    RenderSystem.disableBlend();
-                    RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F); // 重置颜色
-                }
-            }
+            DialogManager.renderPortrait(guiGraphics, portraitDisplayList, this.width, this.height);
         }
 
         // 渲染对话框背景
-        String backgroundImagePath = "textures/dialog_background/background.png";
-        if (backgroundImagePath != null && !backgroundImagePath.isEmpty()) {
-            try {
-                ResourceLocation dialogBgRl = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, backgroundImagePath);
-
-                RenderSystem.setShader(GameRenderer::getPositionTexShader); // 确保使用正确的着色器
-                RenderSystem.setShaderTexture(0, dialogBgRl); // 绑定纹理
-                RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F); // 重置颜色，确保图片不受先前渲染影响
-                RenderSystem.enableBlend(); // 为透明图片启用混合
-                RenderSystem.defaultBlendFunc(); // 使用默认混合函数
-
-                // 将图片拉伸至对话框大小进行渲染
-                guiGraphics.blit(dialogBgRl, dialogBoxX, dialogBoxY, 0, 0.0F, 0.0F, dialogBoxWidth, dialogBoxHeight, dialogBoxWidth, dialogBoxHeight);
-
-                RenderSystem.disableBlend(); // 绘制完毕后禁用混合
-            } catch (Exception e) {
-                Dialog.LOGGER.error("Failed to render dialog background image: " + backgroundImagePath + ". Falling back to solid color.", e);
-                // 回退到纯色背景
-                int backgroundColor = ClientConfig.DIALOG_BACKGROUND_COLOR.get();
-                int opacity = ClientConfig.DIALOG_BACKGROUND_OPACITY.get();
-                int color = (opacity << 24) | (backgroundColor & 0xFFFFFF);
-                guiGraphics.fill(dialogBoxX, dialogBoxY, dialogBoxX + dialogBoxWidth, dialogBoxY + dialogBoxHeight, color);
-            }
-        } else {
-
-            int backgroundColor = ClientConfig.DIALOG_BACKGROUND_COLOR.get();
-            int opacity = ClientConfig.DIALOG_BACKGROUND_OPACITY.get();
-            int color = (opacity << 24) | (backgroundColor & 0xFFFFFF);
-            guiGraphics.fill(dialogBoxX, dialogBoxY, dialogBoxX + dialogBoxWidth, dialogBoxY + dialogBoxHeight, color);
-        }
+        DialogManager.renderDialogBackground(guiGraphics, dialogBackgroundImagePath, this.dialogBoxX, this.dialogBoxY, this.dialogBoxWidth, this.dialogBoxHeight);
 
         // 如果自动播放开启且无选项，显示提示
         if (DialogManager.isAutoPlaying() && !dialogEntry.hasOptions()) {
-            Component autoPlayText = Component.literal("[AUTO]");
+            Component autoPlayText = Component.translatable("dialog.ui.auto");
             int autoPlayTextWidth = this.font.width(autoPlayText);
             // 将提示显示在对话框的右上角外部一点或者左上角，避免遮挡按钮
             guiGraphics.drawString(this.font, autoPlayText, dialogBoxX + dialogBoxWidth - autoPlayTextWidth - 5, dialogBoxY - 15, 0xFFFFFF);
@@ -624,7 +475,7 @@ public class DialogScreen extends Screen {
             }
         }
         // 渲染按钮和其他UI元素
-        for(Renderable renderable : this.renderables) {
+        for (Renderable renderable : this.renderables) {
             renderable.render(guiGraphics, mouseX, mouseY, partialTicks);
         }
 
@@ -786,11 +637,11 @@ public class DialogScreen extends Screen {
             // 延迟关闭，等待淡出动画完成
             new Thread(() -> {
                 try {
-                    Thread.sleep(BACKGROUND_FADE_DURATION_MS);
-                    minecraft.execute(() -> super.onClose());
+                    Thread.sleep(DialogManager.BACKGROUND_FADE_DURATION_MS);
+                    minecraft.execute(super::onClose);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    minecraft.execute(() -> super.onClose());
+                    minecraft.execute(super::onClose);
                 }
             }).start();
         } else {
@@ -1159,169 +1010,6 @@ public class DialogScreen extends Screen {
             }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
-    //存储每个立绘的显示数据
-    private static class PortraitDisplayData {
-        private final static HashMap<ResourceLocation, BufferedImage> CACHED = new HashMap<>();
-        ResourceLocation resourceLocation;
-        int actualWidth;
-        int actualHeight;
-        float brightness = 1.0f;
-        float size = 1.0f; // 立绘缩放大小
-        PortraitPosition position;
-        PortraitAnimationType animationType = PortraitAnimationType.NONE;
-        long animationStartTime = -1;
-        boolean loadedSuccessfully = false;
-
-        public static void clearCache() {
-            CACHED.clear();
-            Dialog.LOGGER.info("Portrait cache cleared.");
-        }
-
-        PortraitDisplayData(String path, float brightness, PortraitPosition position, PortraitAnimationType animationType, float size) {
-            if (path != null && !path.isEmpty()) {
-                this.resourceLocation = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, String.format("textures/portraits/%s", path));
-                this.brightness = brightness;
-                this.size = Math.max(0.0f, Math.min(5.0f, size)); // 限制范围在0-5之间
-                this.position = position != null ? position : PortraitPosition.RIGHT; // 位置
-                this.animationType = animationType != null ? animationType : PortraitAnimationType.NONE; // 动画类型
-                loadDimensions();
-                if (top.yourzi.dialog.config.ClientConfig.ENABLE_PORTRAIT_ANIMATIONS.get() && loadedSuccessfully && this.animationType != PortraitAnimationType.NONE) {
-                    this.animationStartTime = System.currentTimeMillis();
-                }
-            } else {
-                Dialog.LOGGER.warn("Portrait path is null or empty. Cannot load portrait.");
-            }
-        }
-
-        private void loadDimensions() {
-            if (this.resourceLocation == null) return;
-            var target_bufferedimage = CACHED.get(this.resourceLocation);
-            if (target_bufferedimage == null) {
-                try {
-                    Optional<Resource> resourceOptional = Minecraft.getInstance().getResourceManager().getResource(this.resourceLocation);
-                    if (resourceOptional.isPresent()) {
-                        try (final var inputStream = resourceOptional.get().open()) {
-                            target_bufferedimage = STBBackendImage.read(inputStream);
-                            this.actualWidth = target_bufferedimage.getWidth();
-                            this.actualHeight = target_bufferedimage.getHeight();
-                            this.loadedSuccessfully = true;
-                            CACHED.put(this.resourceLocation, target_bufferedimage);
-                        }
-                    } else {
-                        Dialog.LOGGER.warn("Portrait resource not found: {}.", this.resourceLocation);
-                    }
-                } catch (IOException e) {
-                    Dialog.LOGGER.error("Error reading portrait image {}: {}.", this.resourceLocation, e.getMessage());
-                } catch (Exception e) {
-                    Dialog.LOGGER.error("Unexpected error loading portrait image {}: {}.", this.resourceLocation, e.getMessage());
-                }
-            } else {
-                this.actualWidth = target_bufferedimage.getWidth();
-                this.actualHeight = target_bufferedimage.getHeight();
-                this.loadedSuccessfully = true;
-            }
-        }
-    }
-
-
-    private void renderBackgroundImage(GuiGraphics guiGraphics, BackgroundImageDisplayData bgData) {
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, bgData.imageLocation);
-
-        // 计算基于动画类型的透明度
-        float alpha = 1.0F;
-
-        // 优先处理关闭时的淡出效果
-        if (isClosing && backgroundFadeOutStartTime > 0) {
-            // 淡出阶段：从1到0
-            long elapsedTime = System.currentTimeMillis() - backgroundFadeOutStartTime;
-            if (elapsedTime < BACKGROUND_FADE_DURATION_MS) {
-                alpha = Math.max(0.0F, 1.0F - (float) elapsedTime / BACKGROUND_FADE_DURATION_MS);
-            } else {
-                alpha = 0.0F;
-            }
-        } else {
-            // 根据动画类型计算透明度
-            switch (bgData.animationType) {
-                case FADE_IN:
-                    if (bgData.animationStartTime > 0) {
-                        long elapsedTime = System.currentTimeMillis() - bgData.animationStartTime;
-                        if (elapsedTime < BACKGROUND_FADE_DURATION_MS) {
-                            alpha = Math.min(1.0F, (float) elapsedTime / BACKGROUND_FADE_DURATION_MS);
-                        }
-                    }
-                    break;
-                case NONE:
-                default:
-                    alpha = 1.0F;
-                    break;
-            }
-        }
-
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-
-        int screenWidth = this.width;
-        int screenHeight = this.height;
-        int imgWidth = bgData.imageWidth;
-        int imgHeight = bgData.imageHeight;
-
-        BackgroundRenderOption renderOption = bgData.renderOption != null ? bgData.renderOption : BackgroundRenderOption.FILL;
-
-        switch (renderOption) {
-            case FILL:
-                float screenAspect = (float) screenWidth / screenHeight;
-                float imageAspect = (float) imgWidth / imgHeight;
-                int drawWidth, drawHeight, drawX, drawY;
-                if (imageAspect > screenAspect) {
-                    drawHeight = screenHeight;
-                    drawWidth = (int) (screenHeight * imageAspect);
-                    drawX = (screenWidth - drawWidth) / 2;
-                    drawY = 0;
-                } else {
-                    drawWidth = screenWidth;
-                    drawHeight = (int) (screenWidth / imageAspect);
-                    drawX = 0;
-                    drawY = (screenHeight - drawHeight) / 2;
-                }
-                guiGraphics.blit(bgData.imageLocation, drawX, drawY, drawWidth, drawHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
-                break;
-            case FIT:
-                screenAspect = (float) screenWidth / screenHeight;
-                imageAspect = (float) imgWidth / imgHeight;
-                if (imageAspect > screenAspect) {
-                    drawWidth = screenWidth;
-                    drawHeight = (int) (screenWidth / imageAspect);
-                } else {
-                    drawHeight = screenHeight;
-                    drawWidth = (int) (screenHeight * imageAspect);
-                }
-                drawX = (screenWidth - drawWidth) / 2;
-                drawY = (screenHeight - drawHeight) / 2;
-                guiGraphics.blit(bgData.imageLocation, drawX, drawY, drawWidth, drawHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
-                break;
-            case STRETCH:
-                guiGraphics.blit(bgData.imageLocation, 0, 0, screenWidth, screenHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
-                break;
-            case TILE:
-                for (int y = 0; y < screenHeight; y += imgHeight) {
-                    for (int x = 0; x < screenWidth; x += imgWidth) {
-                        int w = Math.min(imgWidth, screenWidth - x);
-                        int h = Math.min(imgHeight, screenHeight - y);
-                        guiGraphics.blit(bgData.imageLocation, x, y, 0, 0, w, h, imgWidth, imgHeight);
-                    }
-                }
-                break;
-            case CENTER:
-                drawX = (screenWidth - imgWidth) / 2;
-                drawY = (screenHeight - imgHeight) / 2;
-                guiGraphics.blit(bgData.imageLocation, drawX, drawY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
-                break;
-        }
-        RenderSystem.disableBlend();
     }
 
     // 历史记录音频播放按钮类

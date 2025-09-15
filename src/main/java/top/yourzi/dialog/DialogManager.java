@@ -1,9 +1,12 @@
 package top.yourzi.dialog;
 
 import com.google.gson.*;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.commands.CommandSourceStack;
@@ -19,14 +22,16 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
-import top.yourzi.dialog.model.DialogEntry;
-import top.yourzi.dialog.model.DialogOption;
-import top.yourzi.dialog.model.DialogSequence;
+import top.yourzi.dialog.config.ClientConfig;
+import top.yourzi.dialog.model.*;
 import top.yourzi.dialog.network.NetworkHandler;
+import top.yourzi.dialog.ui.BackgroundImageDisplayData;
 import top.yourzi.dialog.ui.DialogScreen;
+import top.yourzi.dialog.ui.PortraitDisplayData;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -60,6 +65,9 @@ public class DialogManager {
     private static boolean isAutoPlaying = false;
     // 存储当前对话的玩家名称
     private String currentDialogPlayerName;
+
+    public static final int BACKGROUND_FADE_DURATION_MS = 500; // 背景图片淡入淡出持续时间，单位毫秒
+    public static final int ANIMATION_DURATION_MS = 300; // 动画持续时间，单位毫秒
 
     private DialogManager() {
     }
@@ -777,6 +785,217 @@ public class DialogManager {
             List<String> singleCommandList = new ArrayList<>();
             singleCommandList.add(command);
             executeCommands(player, singleCommandList);
+        }
+    }
+
+    public static void renderBackgroundImage(GuiGraphics guiGraphics, BackgroundImageDisplayData bgData, boolean isClosing, long fadeOutStartTime, int screenWidth, int screenHeight) {
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, bgData.getImageLocation());
+
+        // 计算基于动画类型的透明度
+        float alpha = 1.0F;
+
+        // 优先处理关闭时的淡出效果
+        if (isClosing && fadeOutStartTime > 0) {
+            // 淡出阶段：从1到0
+            long elapsedTime = System.currentTimeMillis() - fadeOutStartTime;
+            if (elapsedTime < BACKGROUND_FADE_DURATION_MS) {
+                alpha = Math.max(0.0F, 1.0F - (float) elapsedTime / BACKGROUND_FADE_DURATION_MS);
+            } else {
+                alpha = 0.0F;
+            }
+        } else {
+            // 根据动画类型计算透明度
+            switch (bgData.getAnimationType()) {
+                case FADE_IN:
+                    if (bgData.getAnimationStartTime() > 0) {
+                        long elapsedTime = System.currentTimeMillis() - bgData.getAnimationStartTime();
+                        if (elapsedTime < BACKGROUND_FADE_DURATION_MS) {
+                            alpha = Math.min(1.0F, (float) elapsedTime / BACKGROUND_FADE_DURATION_MS);
+                        }
+                    }
+                    break;
+                case NONE:
+                default:
+                    break;
+            }
+        }
+
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+
+        int imgWidth = bgData.getImageWidth();
+        int imgHeight = bgData.getImageHeight();
+
+        BackgroundRenderOption renderOption = bgData.getRenderOption() != null ? bgData.getRenderOption() : BackgroundRenderOption.FILL;
+
+        switch (renderOption) {
+            case FILL:
+                float screenAspect = (float) screenWidth / screenHeight;
+                float imageAspect = (float) imgWidth / imgHeight;
+                int drawWidth, drawHeight, drawX, drawY;
+                if (imageAspect > screenAspect) {
+                    drawHeight = screenHeight;
+                    drawWidth = (int) (screenHeight * imageAspect);
+                    drawX = (screenWidth - drawWidth) / 2;
+                    drawY = 0;
+                } else {
+                    drawWidth = screenWidth;
+                    drawHeight = (int) (screenWidth / imageAspect);
+                    drawX = 0;
+                    drawY = (screenHeight - drawHeight) / 2;
+                }
+                guiGraphics.blit(bgData.getImageLocation(), drawX, drawY, drawWidth, drawHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
+                break;
+            case FIT:
+                screenAspect = (float) screenWidth / screenHeight;
+                imageAspect = (float) imgWidth / imgHeight;
+                if (imageAspect > screenAspect) {
+                    drawWidth = screenWidth;
+                    drawHeight = (int) (screenWidth / imageAspect);
+                } else {
+                    drawHeight = screenHeight;
+                    drawWidth = (int) (screenHeight * imageAspect);
+                }
+                drawX = (screenWidth - drawWidth) / 2;
+                drawY = (screenHeight - drawHeight) / 2;
+                guiGraphics.blit(bgData.getImageLocation(), drawX, drawY, drawWidth, drawHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
+                break;
+            case STRETCH:
+                guiGraphics.blit(bgData.getImageLocation(), 0, 0, screenWidth, screenHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
+                break;
+            case TILE:
+                for (int y = 0; y < screenHeight; y += imgHeight) {
+                    for (int x = 0; x < screenWidth; x += imgWidth) {
+                        int w = Math.min(imgWidth, screenWidth - x);
+                        int h = Math.min(imgHeight, screenHeight - y);
+                        guiGraphics.blit(bgData.getImageLocation(), x, y, 0, 0, w, h, imgWidth, imgHeight);
+                    }
+                }
+                break;
+            case CENTER:
+                drawX = (screenWidth - imgWidth) / 2;
+                drawY = (screenHeight - imgHeight) / 2;
+                guiGraphics.blit(bgData.getImageLocation(), drawX, drawY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight, imgWidth, imgHeight);
+                break;
+        }
+        RenderSystem.disableBlend();
+    }
+
+    public static void renderPortrait(GuiGraphics guiGraphics, List<PortraitDisplayData> portraitDisplayList, int screenWidth, int screenHeight) {
+        for (PortraitDisplayData displayData : portraitDisplayList) {
+            if (displayData.isLoadedSuccessfully() && displayData.getResourceLocation() != null && displayData.getActualWidth() > 0 && displayData.getActualHeight() > 0) {
+                RenderSystem.setShader(GameRenderer::getPositionTexShader);
+
+                RenderSystem.setShaderTexture(0, displayData.getResourceLocation());
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+
+                int portraitRenderHeight = (int) (screenHeight * 0.7); // 固定高度
+                float aspectRatio = (float) displayData.getActualWidth() / displayData.getActualHeight();
+                int portraitRenderWidth = (int) (portraitRenderHeight * aspectRatio); // 等比例计算宽度
+
+                int baseX = 0, baseY = 0;
+                float currentScale = displayData.getSize(); // 使用size属性控制缩放
+                float currentAlpha = 1.0f;
+                float yOffset = 0;
+                float xOffset = 0;
+
+                long currentTime = System.currentTimeMillis();
+                float progress = 1.0f;
+
+                if (ClientConfig.ENABLE_PORTRAIT_ANIMATIONS.get() && displayData.getAnimationType() != PortraitAnimationType.NONE && displayData.getAnimationStartTime() != -1) {
+                    long elapsedTime = currentTime - displayData.getAnimationStartTime();
+                    if (elapsedTime < ANIMATION_DURATION_MS) {
+                        progress = (float) elapsedTime / ANIMATION_DURATION_MS;
+                    } else {
+                        displayData.setAnimationStartTime(-1);
+                    }
+
+                    switch (displayData.getAnimationType()) {
+                        case FADE_IN:
+                            currentAlpha = Mth.lerp(progress, 0f, 1f);
+                            break;
+                        case SLIDE_IN_FROM_BOTTOM:
+                            yOffset = Mth.lerp(progress, 50f, 0f);
+                            break;
+                        case BOUNCE:
+                            if (progress < 0.5f) {
+                                yOffset = Mth.lerp(progress * 2, 0f, -20f);
+                            } else {
+                                yOffset = Mth.lerp((progress - 0.5f) * 2, -20f, 0f);
+                            }
+                            break;
+                        case NONE:
+                        default:
+                            break;
+                    }
+                }
+                if (displayData.getBrightness() == 0.0f) {
+                    RenderSystem.setShaderColor(0.0f, 0.0f, 0.0f, 1.0f); // 纯黑剪影，完全不透明
+                } else {
+                    //使用brightness调整RGB，currentAlpha处理透明度
+                    RenderSystem.setShaderColor(displayData.getBrightness(), displayData.getBrightness(), displayData.getBrightness(), currentAlpha);
+                }
+
+                int scaledWidth = (int) (portraitRenderWidth * currentScale);
+                int scaledHeight = (int) (portraitRenderHeight * currentScale);
+
+                baseY = switch (displayData.getPosition()) {
+                    case LEFT -> {
+                        baseX = 20;
+                        yield screenHeight - scaledHeight;
+                    }
+                    case RIGHT -> {
+                        baseX = screenWidth - scaledWidth - 20;
+                        yield screenHeight - scaledHeight;
+                    }
+                    default -> {
+                        baseX = (screenWidth - scaledWidth) / 2;
+                        yield screenHeight - scaledHeight;
+                    }
+                };
+
+                int finalX = baseX + (int) xOffset;
+                int finalY = baseY + (int) yOffset;
+
+                guiGraphics.blit(displayData.getResourceLocation(), finalX, finalY, 0, 0, scaledWidth, scaledHeight, scaledWidth, scaledHeight);
+                RenderSystem.disableBlend();
+                RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F); // 重置颜色
+            }
+        }
+    }
+
+    public static void renderDialogBackground(GuiGraphics guiGraphics, String imagePath, int dialogBoxX, int dialogBoxY, int dialogBoxWidth, int dialogBoxHeight) {
+        if (imagePath != null && !imagePath.isEmpty()) {
+            try {
+                ResourceLocation dialogBgRl = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, imagePath);
+
+                RenderSystem.setShader(GameRenderer::getPositionTexShader); // 确保使用正确的着色器
+                RenderSystem.setShaderTexture(0, dialogBgRl); // 绑定纹理
+                RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F); // 重置颜色，确保图片不受先前渲染影响
+                RenderSystem.enableBlend(); // 为透明图片启用混合
+                RenderSystem.defaultBlendFunc(); // 使用默认混合函数
+
+                // 将图片拉伸至对话框大小进行渲染
+                guiGraphics.blit(dialogBgRl, dialogBoxX, dialogBoxY, 0, 0.0F, 0.0F, dialogBoxWidth, dialogBoxHeight, dialogBoxWidth, dialogBoxHeight);
+
+                RenderSystem.disableBlend(); // 绘制完毕后禁用混合
+            } catch (Exception e) {
+                Dialog.LOGGER.error("Failed to render dialog background image: {}. Falling back to solid color.", imagePath, e);
+                // 回退到纯色背景
+                int backgroundColor = ClientConfig.DIALOG_BACKGROUND_COLOR.get();
+                int opacity = ClientConfig.DIALOG_BACKGROUND_OPACITY.get();
+                int color = (opacity << 24) | (backgroundColor & 0xFFFFFF);
+                guiGraphics.fill(dialogBoxX, dialogBoxY, dialogBoxX + dialogBoxWidth, dialogBoxY + dialogBoxHeight, color);
+            }
+        } else {
+            // 默认纯色背景
+            int backgroundColor = ClientConfig.DIALOG_BACKGROUND_COLOR.get();
+            int opacity = ClientConfig.DIALOG_BACKGROUND_OPACITY.get();
+            int color = (opacity << 24) | (backgroundColor & 0xFFFFFF);
+            guiGraphics.fill(dialogBoxX, dialogBoxY, dialogBoxX + dialogBoxWidth, dialogBoxY + dialogBoxHeight, color);
         }
     }
 

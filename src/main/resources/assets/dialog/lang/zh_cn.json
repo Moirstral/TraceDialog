@@ -22,6 +22,7 @@
   "dialog.ui.close_history": "关闭历史记录",
   "dialog.ui.esc": "关闭对话",
   "dialog.ui.confirm_esc": "是否跳过整段对话？",
+  "dialog.ui.auto": "自动播放中...",
   
   "dialog.manager.requesting_from_server": "本地未找到对话序列，正在试图从服务器请求...",
   "dialog.manager.loading": "正在加载对话文件，路径: %s",
