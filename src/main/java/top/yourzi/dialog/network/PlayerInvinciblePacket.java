@@ -38,6 +38,10 @@ public record PlayerInvinciblePacket(Byte status) implements CustomPacketPayload
     public static void handle(final PlayerInvinciblePacket message, final IPayloadContext context) {
         context.enqueueWork(() -> {
             ServerPlayer player = (ServerPlayer) context.player();
+            if (!player.gameMode.isSurvival()) {
+                // 仅生存模式有效
+                return;
+            }
             MinecraftServer server = player.getServer();
             if (server == null) {
                 Dialog.LOGGER.warn("ExecuteServerCommandPacket handler: MinecraftServer instance is null.");
