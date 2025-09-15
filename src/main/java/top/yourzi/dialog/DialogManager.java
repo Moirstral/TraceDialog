@@ -1059,7 +1059,11 @@ public class DialogManager {
     public static Component subText(Component text, int length) {
         MutableComponent sub = Component.empty();
         int subLength = 0;
-        for (Component sibling : text.getSiblings()) {
+        List<Component> siblings = text.getSiblings();
+        if (siblings.isEmpty()) {
+            siblings.add(text);
+        }
+        for (Component sibling : siblings) {
             int maxLength = length - subLength;
             String siblingText = sibling.getString(maxLength);
             if (!siblingText.isEmpty()) {
