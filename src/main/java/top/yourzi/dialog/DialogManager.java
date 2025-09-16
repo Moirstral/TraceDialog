@@ -414,7 +414,7 @@ public class DialogManager {
                     }
 
                     try {
-                        int result = dispatcher.execute(dispatcher.parse(entryVisibilityCommand, commandSource));
+                        int result = dispatcher.execute(dispatcher.parse(optionVisibilityCommand, commandSource));
                         if (result == 1) {
                             visibleOptions.add(option);
                         } else {
