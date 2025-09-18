@@ -78,6 +78,9 @@
   "dialog.test_overlay.entry.start.text": "Welcome, @i! This is a dialog overlay example. Overlay mode does not affect operation, similar to subtitles.",
   "dialog.test_overlay.entry.end.text": "If nothing unexpected happens, it should be dawn now.",
 
+  "dialog.test_menu.entry.command.text": "What should I do?",
+
+
   "dialog.chat.history.title": "=============== %s Start ===============",
   "dialog.chat.history.entry": "%s: %s",
   "dialog.chat.history.footer": "================ %s End ================"

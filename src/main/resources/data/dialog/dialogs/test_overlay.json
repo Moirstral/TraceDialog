@@ -42,6 +42,17 @@
           "position": "LEFT",
           "animationType": "FADE_OUT"
         }
+      ],
+      "display_items": [
+        {
+          "item": "minecraft:apple",
+          "count": 16
+        },
+        {
+          "item": "minecraft:diamond_sword",
+          "count": 1,
+          "nbt": "{Damage: 50, Enchantments:[{lvl: 255s, id: \"minecraft:sharpness\"}]}"
+        }
       ]
     }
   ]

@@ -1,15 +1,26 @@
 package top.yourzi.dialog.model;
 
 import com.google.gson.*;
+import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
+import com.google.gson.reflect.TypeToken;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import com.google.gson.stream.JsonWriter;
+import com.mojang.brigadier.CommandDispatcher;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import top.yourzi.dialog.Dialog;
+import top.yourzi.dialog.DialogManager;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -33,7 +44,7 @@ public class DialogEntry {
     @SerializedName("next")
     private String nextId;
     // 可选的对话选项
-    private DialogOption[] options;
+    private DialogEntryOptions options;
     // 用户选择的选项文本
     private String selectedOptionText;
     // 该对话条目完成后执行的命令
@@ -163,7 +174,7 @@ public class DialogEntry {
     }
 
     public boolean hasOptions() {
-        return options != null && options.length > 0;
+        return this.options != null && this.options.hasOptions();
     }
 
     private boolean performDeepPlaceholderReplace(JsonObject jsonObject, String placeholder, String replacement) {
@@ -218,5 +229,132 @@ public class DialogEntry {
             if (elementModifiedInLoop) overallArrayModified = true;
         }
         return overallArrayModified;
+    }
+
+    @Getter
+    @JsonAdapter(DialogEntryOptions.Adapter.class)
+    public static class DialogEntryOptions {
+
+        private List<List<DialogOption>> rows;
+        private final int[] maxHeights; // 行内按钮最大高度
+        private final int[] maxMarginTop; // 行内按钮上外边距最大值
+        private final int[] maxMarginBottom; // 行内按钮下外边距最大值
+        private final boolean[] isAdaptiveWidth; // 是否自适应宽度
+
+        public DialogEntryOptions(List<List<DialogOption>> rows) {
+            this.rows = rows;
+            this.maxHeights = new int[rows.size()];
+            this.maxMarginTop = new int[rows.size()];
+            this.maxMarginBottom = new int[rows.size()];
+            this.isAdaptiveWidth = new boolean[rows.size()];
+            for (int i = 0; i < rows.size(); i++) {
+                List<DialogOption> row = rows.get(i);
+                if (row.size() > 1) {
+                    row.sort(Comparator.comparing(DialogOption::getAlign));
+                }
+                int maxHeight = 0;
+                int maxMarginTop = 0;
+                int maxMarginBottom = 0;
+                boolean isAdaptiveWidth = true;
+                for (DialogOption option : row) {
+                    maxHeight = Math.max(maxHeight, option.getHeight());
+                    maxMarginTop = Math.max(maxMarginTop, option.getMargin().top());
+                    maxMarginBottom = Math.max(maxMarginBottom, option.getMargin().bottom());
+                    // 如果某个选项的宽度、外边距、高度不为空，则不是自适应宽度
+                    isAdaptiveWidth &= option.getWidth() == null && option.getWidthPercentage() == null && (option.getMargin() == null || option.getMargin() == DialogOption.Position.DEFAULT);
+                }
+                if (isAdaptiveWidth) {
+                    for (DialogOption option : row) {
+                        option.setAlignIfNull(DialogOption.Align.LEFT);
+                    }
+                    row.getLast().setAlignIfNull(DialogOption.Align.RIGHT);
+                }
+                this.maxHeights[i] = maxHeight;
+                this.maxMarginTop[i] = maxMarginTop;
+                this.maxMarginBottom[i] = maxMarginBottom;
+                this.isAdaptiveWidth[i] = isAdaptiveWidth;
+            }
+        }
+
+        public boolean hasOptions() {
+            return rows != null && !rows.isEmpty();
+        }
+
+        public void visible(CommandDispatcher<CommandSourceStack> dispatcher, CommandSourceStack commandSource, String dialogEntryId) {
+            if (this.rows == null) return;
+            List<List<DialogOption>> visibleEntries = new ArrayList<>();
+            String playerName = commandSource.getTextName();
+            for (List<DialogOption> line : rows) {
+                List<DialogOption> visibleLine = new ArrayList<>();
+                for (DialogOption option : line) {
+                    String optionVisibilityCommand = option.getVisibilityCommand();
+                    if (optionVisibilityCommand == null || optionVisibilityCommand.isEmpty()) {
+                        visibleLine.add(option);
+                        continue;
+                    }
+                    try {
+                        int result = dispatcher.execute(dispatcher.parse(optionVisibilityCommand, commandSource));
+                        if (result == 1) {
+                            visibleLine.add(option);
+                        } else {
+                            Dialog.LOGGER.debug("Visibility command '{}' for option '{}' (dialog:entry '{}') for player {} returned {}, option hidden.",
+                                    optionVisibilityCommand, option.getText(DialogManager.levelRegistryAccess(), playerName), dialogEntryId, playerName, result);
+                        }
+                    } catch (Exception e) {
+                        Dialog.LOGGER.warn("Error executing visibility command '{}' for option '{}' (dialog:entry '{}') for player {}: {}. Option hidden.",
+                                optionVisibilityCommand, option.getText(DialogManager.levelRegistryAccess(), playerName), dialogEntryId, playerName, e.getMessage());
+                    }
+                }
+                visibleEntries.add(visibleLine);
+            }
+            rows.clear();
+            rows = visibleEntries;
+        }
+
+        public static class Adapter extends TypeAdapter<DialogEntryOptions> {
+            @Override
+            public void write(JsonWriter out, DialogEntryOptions value) throws IOException {
+                out.beginArray();
+                for (List<DialogOption> row : value.rows) {
+                    if (row == null || row.isEmpty()) continue;
+                    if (row.size() == 1) {
+                        DialogManager.GSON.getAdapter(DialogOption.class).write(out, row.getFirst());
+                        continue;
+                    }
+                    out.beginArray();
+                    for (DialogOption option : row) {
+                        DialogManager.GSON.getAdapter(DialogOption.class).write(out, option);
+                    }
+                    out.endArray();
+                }
+                out.endArray();
+            }
+
+            @Override
+            public DialogEntryOptions read(JsonReader in) throws IOException {
+                JsonToken token = in.peek();
+                if (token == JsonToken.NULL) {
+                    in.nextNull();
+                    return null;
+                } else if (token == JsonToken.BEGIN_ARRAY) {
+                    JsonArray array = JsonParser.parseReader(in).getAsJsonArray();
+                    List<List<DialogOption>> rows = new ArrayList<>();
+                    for (JsonElement element : array) {
+                        if (element.isJsonObject()) {
+                            rows.add(new ArrayList<>() {{
+                                add(DialogManager.GSON.fromJson(element, DialogOption.class));
+                            }});
+                        } else if (element.isJsonArray()) {
+                            rows.add(DialogManager.GSON.fromJson(element, new TypeToken<List<DialogOption>>() {
+                            }.getType()));
+                        } else {
+                            throw new JsonParseException("Invalid options format");
+                        }
+                    }
+                    return new DialogEntryOptions(rows);
+                }
+                throw new JsonParseException("Invalid options format");
+            }
+        }
     }
 }

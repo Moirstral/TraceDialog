@@ -280,22 +280,6 @@ public class DialogOverlay implements LayeredDraw.Layer {
                 }
             }
 
-            // 渲染对话中展示的物品
-            if (!this.displayItemStacks.isEmpty() && textFullyDisplayed) {
-                int itemSize = 16;
-                int itemPadding = 4;
-                int totalItemWidth = (this.displayItemStacks.size() * itemSize) + (Math.max(0, this.displayItemStacks.size() - 1) * itemPadding);
-
-                int startX = dialogBoxX + (dialogBoxWidth - totalItemWidth) / 2;
-                int itemY = dialogBoxY - itemSize - 5;
-
-                for (ItemStack itemStack : this.displayItemStacks) {
-                    guiGraphics.renderItem(itemStack, startX, itemY);
-                    guiGraphics.renderItemDecorations(this.font, itemStack, startX, itemY);
-                    startX += itemSize + itemPadding;
-                }
-            }
-
             // 如果文本完全显示，则延迟后自动前进
             if (textFullyDisplayed) {
                 boolean canAutoAdvance = false;
@@ -337,6 +321,24 @@ public class DialogOverlay implements LayeredDraw.Layer {
             for (int i = Math.max(0, lines.size() - (maxHeight / lineHeight)); i < lines.size(); i++) {
                 guiGraphics.drawString(font, lines.get(i), textX, textY, ClientConfig.DIALOG_TEXT_COLOR.get());
                 textY += lineHeight;
+            }
+        }
+
+        DialogManager.renderDisplayItem(guiGraphics, font, this.displayItemStacks, dialogBoxWidth, dialogBoxX, dialogBoxY, 0, 0);
+
+        // 渲染对话中展示的物品
+        if (!this.displayItemStacks.isEmpty()) {
+            int itemSize = 16;
+            int itemPadding = 4;
+            int totalItemWidth = (this.displayItemStacks.size() * itemSize) + (Math.max(0, this.displayItemStacks.size() - 1) * itemPadding);
+
+            int startX = dialogBoxX + (dialogBoxWidth - totalItemWidth) / 2;
+            int itemY = dialogBoxY - itemSize - 5;
+
+            for (ItemStack itemStack : this.displayItemStacks) {
+                guiGraphics.renderItem(itemStack, startX, itemY);
+                guiGraphics.renderItemDecorations(this.font, itemStack, startX, itemY);
+                startX += itemSize + itemPadding;
             }
         }
         this.minecraft.getProfiler().pop();

@@ -1,0 +1,67 @@
+{
+  "id": "test_menu",
+  "title": "菜单",
+  "type": "MENU",
+  "start": "command",
+  "allowClose": true,
+  "entries": [
+    {
+      "id": "command",
+      "speaker": {
+        "translate": "dialog.test_dialog.speaker.tlipoca",
+        "color": "red"
+      },
+      "text": {
+        "translate": "dialog.test_menu.entry.command.text"
+      },
+      "portraits": [
+        {
+          "path": "tlipoca_1.png"
+        }
+      ],
+      "options": [
+        [
+          {
+            "text": {
+              "translate": "dialog.test_dialog.option.weather_clear"
+            },
+            "command": [
+              "weather clear"
+            ],
+            "align": "CENTER",
+            "text_align": "CENTER",
+            "tooltips": {
+              "translate": "dialog.test_dialog.option.weather_clear"
+            }
+          },
+          {
+            "text": {
+              "translate": "dialog.test_dialog.option.weather_rain"
+            },
+            "command": [
+              "weather rain"
+            ],
+            "align": "LEFT",
+            "text_align": "LEFT",
+            "tooltips": {
+              "translate": "dialog.test_dialog.option.weather_rain"
+            }
+          },
+          {
+            "text": {
+              "translate": "dialog.test_dialog.option.weather_thunder"
+            },
+            "command": [
+              "weather thunder"
+            ],
+            "align": "RIGHT",
+            "text_align": "RIGHT",
+            "tooltips": {
+              "translate": "dialog.test_dialog.option.weather_thunder"
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}

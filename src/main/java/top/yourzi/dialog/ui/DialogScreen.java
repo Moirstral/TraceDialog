@@ -8,7 +8,6 @@ import net.minecraft.client.gui.components.WidgetSprites;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -40,60 +39,61 @@ import java.util.List;
 @SuppressWarnings("removal")
 public class DialogScreen extends Screen {
     // 对话序列和当前对话条目
-    private final DialogSequence dialogSequence;
-    private final DialogEntry dialogEntry;
+    protected final DialogSequence dialogSequence;
+    protected final DialogEntry dialogEntry;
     // 选项按钮列表
-    private final List<OptionButton> optionButtons = new ArrayList<>();
+    protected final List<OptionButton> optionButtons = new ArrayList<>();
     // 玩家名称
-    private final String playerName;
+    protected final String playerName;
     //立绘数据列表
-    private final List<PortraitDisplayData> portraitDisplayList = new ArrayList<>();
+    protected final List<PortraitDisplayData> portraitDisplayList = new ArrayList<>();
     // 需要在对话中显示的物品列表
-    private final List<ItemStack> displayItemStacks = new ArrayList<>();
+    protected final List<ItemStack> displayItemStacks = new ArrayList<>();
     // 背景图片相关
-    private BackgroundImageDisplayData backgroundImageDisplayData;
-    private long backgroundFadeStartTime = 0; // 背景图片淡入开始时间
-    private long backgroundFadeOutStartTime = 0; // 背景图片淡出开始时间
-    private boolean isClosing = false; // 是否正在关闭
+    protected BackgroundImageDisplayData backgroundImageDisplayData;
+    protected long backgroundFadeStartTime = 0; // 背景图片淡入开始时间
+    protected long backgroundFadeOutStartTime = 0; // 背景图片淡出开始时间
+    protected boolean isClosing = false; // 是否正在关闭
     // 对话框位置和大小
-    private int dialogBoxX;
-    private int dialogBoxY;
-    private int dialogBoxWidth;
-    private int dialogBoxHeight;
+    protected int dialogBoxX;
+    protected int dialogBoxY;
+    protected int dialogBoxWidth;
+    protected int dialogBoxHeight;
     // 对话框背景图片
-    private final String dialogBackgroundImagePath;
+    protected String dialogBackgroundImagePath;
     // 文本动画相关
-    private int currentCharIndex = 0;
-    private long lastCharTime = 0;
-    private boolean textFullyDisplayed = false;
+    protected int currentCharIndex = 0;
+    protected long lastCharTime = 0;
+    protected boolean textFullyDisplayed = false;
+    // 选项相关
+    protected boolean showOptionsNow = false;
     // 快速跳过相关
-    private int fastForwardCooldown = 0;
-    private boolean optionButtonsCreated = false; // 标记选项按钮是否已为当前条目创建
+    protected int fastForwardCooldown = 0;
+    protected boolean optionButtonsCreated = false; // 标记选项按钮是否已为当前条目创建
     // 对话历史记录界面相关
-    private boolean showingHistory = false;
-    private int historyScrollOffset = 0;
-    private List<DialogEntry> historyEntries = new ArrayList<>();
-    private ImageButton closeHistoryButton; // 关闭历史记录按钮
-    private ImageButton viewHistoryButton; // 查看历史按钮
-    private ImageButton autoPlayButton; // 自动播放按钮
+    protected boolean showingHistory = false;
+    protected int historyScrollOffset = 0;
+    protected List<DialogEntry> historyEntries = new ArrayList<>();
+    protected ImageButton closeHistoryButton; // 关闭历史记录按钮
+    protected ImageButton viewHistoryButton; // 查看历史按钮
+    protected ImageButton autoPlayButton; // 自动播放按钮
     // 滚动条相关
-    private int totalHistoryContentHeight = 0;
-    private boolean canScrollHistoryDown = false;
-    private boolean canScrollHistoryUp = false;
-    private static final WidgetSprites DEFAULT_BUTTON_SPRITES = new WidgetSprites(
+    protected int totalHistoryContentHeight = 0;
+    protected boolean canScrollHistoryDown = false;
+    protected boolean canScrollHistoryUp = false;
+    protected static final WidgetSprites DEFAULT_BUTTON_SPRITES = new WidgetSprites(
             ResourceLocation.withDefaultNamespace("widget/button"), ResourceLocation.withDefaultNamespace("widget/button_highlighted")
     );
-
-    public HolderLookup.Provider levelRegistryAccess() {
-        return Minecraft.getInstance().level.registryAccess();
-    }
+    protected static final WidgetSprites CUSTOM_BUTTON_SPRITES = new WidgetSprites(
+            ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "widget/button"), ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "widget/button_highlighted")
+    );
 
     // 历史记录音频播放相关
-    private final List<HistoryAudioButton> historyAudioButtons = new ArrayList<>();
-    private SimpleSoundInstance currentHistoryAudio = null; // 当前播放的历史记录音频
+    protected final List<HistoryAudioButton> historyAudioButtons = new ArrayList<>();
+    protected SimpleSoundInstance currentHistoryAudio = null; // 当前播放的历史记录音频
 
     // 说话实体（可选）
-    private final net.minecraft.world.entity.Entity speakerEntity;
+    protected final net.minecraft.world.entity.Entity speakerEntity;
 
     // 音频播放现在由DialogManager全局管理
     public DialogScreen(DialogSequence dialogSequence, DialogEntry dialogEntry, String playerName) {
@@ -206,11 +206,29 @@ public class DialogScreen extends Screen {
         super.init();
 
         // 设置对话框位置和大小
+        initSize();
+
+        // 初始化按钮
+        initButtons();
+
+        // 如果此对话条目有选项，预先停止自动播放
+        if (dialogEntry.hasOptions()) {
+            if (DialogManager.isAutoPlaying()) {
+                DialogManager.stopAutoPlay();
+                updateAutoPlayButtonText(); // 更新按钮文本以反映自动播放已停止
+            }
+        }
+        this.optionButtonsCreated = false; // 初始化选项按钮创建标记
+    }
+
+    protected void initSize() {
         dialogBoxWidth = ClientConfig.DIALOG_BOX_WIDTH.get();
         dialogBoxHeight = ClientConfig.DIALOG_BOX_HEIGHT.get();
         dialogBoxX = (width - dialogBoxWidth) / 2;
         dialogBoxY = height - dialogBoxHeight - 20;
+    }
 
+    protected void initButtons() {
         // 初始化查看历史按钮 (位于对话框右下角)
         int historyButtonWidth = 20;
         int historyButtonHeight = 20;
@@ -242,15 +260,6 @@ public class DialogScreen extends Screen {
         addRenderableWidget(this.autoPlayButton);
         updateAutoPlayButtonText(); // 初始化按钮文本
 
-        // 如果此对话条目有选项，预先停止自动播放
-        if (dialogEntry.hasOptions()) {
-            if (DialogManager.isAutoPlaying()) {
-                DialogManager.stopAutoPlay();
-                updateAutoPlayButtonText(); // 更新按钮文本以反映自动播放已停止
-            }
-        }
-        this.optionButtonsCreated = false; // 初始化选项按钮创建标记
-
         // 初始化关闭历史记录按钮 (用于关闭历史查看界面)
         int closeButtonWidth = 60;
         int closeButtonHeight = 20;
@@ -265,56 +274,103 @@ public class DialogScreen extends Screen {
 
     /**
      * 创建对话选项按钮
+     * TODO 最近脑子不在线，这代码写的乱七八糟的，而且 margin 并没有很好的实现，后面想起来再说吧
      */
-    private void createOptionButtons() {
+    protected void createOptionButtons() {
         optionButtons.clear();
 
-        DialogOption[] options = dialogEntry.getOptions();
-        if (options == null || options.length == 0) {
-            return;
-        }
+        if (!dialogEntry.hasOptions()) return;
 
-        int buttonWidth = 200; // 默认值
-        int buttonHeight = 20; // 默认值
+        List<List<DialogOption>> optionsRows = dialogEntry.getOptions().getRows();
+        int[] maxHeights = dialogEntry.getOptions().getMaxHeights();
+        int[] maxMarginTop = dialogEntry.getOptions().getMaxMarginTop();
+        int[] maxMarginBottom = dialogEntry.getOptions().getMaxMarginBottom();
+        boolean[] isAdaptiveWidth = dialogEntry.getOptions().getIsAdaptiveWidth();
 
-        // 优先使用本地自定义按钮图集，如果没有则使用原版纹理
-        ResourceLocation buttonTexture = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "widget/button");
-        ResourceLocation buttonHighlightTexture = ResourceLocation.fromNamespaceAndPath(Dialog.MODID, "widget/button_highlighted");
+        // 每行宽度默认为 80% 对话框宽度，且最大不超过200
+        int rowWidth = (int) Math.min(dialogBoxWidth * 0.8, 200);
 
-        int buttonSpacing = 5;
-        int totalHeight = options.length * (buttonHeight + buttonSpacing) - buttonSpacing;
-
-        // 计算选项按钮的起始Y位置，如果有物品显示则需要额外上移
-        int startY = dialogBoxY - totalHeight - 10;
+        int startY = dialogBoxY;
         if (!this.displayItemStacks.isEmpty()) {
             // 物品显示区域高度：itemSize(16) + 间距(5) + 额外间距(10)
             int itemDisplayHeight = 16 + 5 + 10;
             startY -= itemDisplayHeight;
         }
 
+        // 倒序遍历
+        for (int i = optionsRows.size() - 1; i >= 0; i--) {
+            int buttonX = dialogBoxX + (dialogBoxWidth - rowWidth) / 2;
+            int buttonY = startY - maxHeights[i] - maxMarginBottom[i];
+            List<DialogOption> row = optionsRows.get(i);
+            boolean left = false;
+            boolean right = false;
+            for (DialogOption option : row) {
+                // 计算宽度
+                int buttonWidth;
+                if (isAdaptiveWidth[i]) {
+                    buttonWidth = (int) ((rowWidth - DialogOption.Position.DEFAULT.left() * (row.size() - 1)) * (1f / row.size()));
+                } else {
+                    buttonWidth = option.getWidth(dialogBoxWidth);
+                }
 
-        for (int i = 0; i < options.length; i++) {
-            DialogOption option = options[i];
-            int buttonY = startY + i * (buttonHeight + buttonSpacing);
-
-            OptionButton button = addRenderableWidget(new OptionButton(
-                    (width - buttonWidth) / 2, // xPos
-                    buttonY,                   // yPos
-                    buttonWidth,               // width
-                    buttonHeight,              // height
-                    ClientConfig.USE_CUSTOM_BUTTON_TEXTURE.get() ? new WidgetSprites(buttonTexture, buttonHighlightTexture) : DEFAULT_BUTTON_SPRITES,
-                    b -> {                     // onPress
-                        // 执行选项指令（如果存在）
-                        if (option.getCommand() != null && !option.getCommand().isEmpty()) {
-                            DialogManager.getInstance().executeCommands(this.getMinecraft().player, option.getCommand(), this.speakerEntity);
+                // 提前已按左中右进行了排序，所以这里可以直接这样计算
+                switch (option.getAlign()) {
+                    case LEFT:
+                        if (left) {
+                            buttonX += option.getMargin().left();
+                        } else {
+                            buttonX = dialogBoxX + (dialogBoxWidth - rowWidth) / 2;
+                            left = true;
                         }
-                        DialogManager.getInstance().recordChoiceForCurrentDialog(option.getText(levelRegistryAccess(), playerName).getString());
-                        DialogManager.getInstance().jumpToDialog(option.getTargetId());
-                    },
-                    option.getText(levelRegistryAccess(), playerName) // Component message
-            ));
+                        break;
+                    case CENTER:
+                        buttonX = dialogBoxX + (dialogBoxWidth - buttonWidth) / 2;
+                        break;
+                    case RIGHT:
+                        if (right) {
+                            buttonX -= buttonWidth + option.getMargin().right();
+                        } else {
+                            buttonX = dialogBoxX + (dialogBoxWidth - rowWidth) / 2 + rowWidth - buttonWidth;
+                            right = true;
+                        }
+                        break;
+                }
 
-            optionButtons.add(button);
+                WidgetSprites optionBackground = null;
+                if (option.getBackground() != null && !option.getBackground().trim().isEmpty()) {
+                    optionBackground = new WidgetSprites(ResourceLocation.parse(option.getBackground()), ResourceLocation.parse(option.getBackground() + "_highlighted"));
+                }
+
+                OptionButton button = addRenderableWidget(new OptionButton(
+                        buttonX, // xPos
+                        buttonY,                   // yPos
+                        buttonWidth,               // width
+                        option.getHeight(),              // height
+                        optionBackground != null ? optionBackground : ClientConfig.USE_CUSTOM_BUTTON_TEXTURE.get() ? CUSTOM_BUTTON_SPRITES : DEFAULT_BUTTON_SPRITES,
+                        b -> {                     // onPress
+                            // 执行选项指令（如果存在）
+                            if (option.getCommand() != null && !option.getCommand().isEmpty()) {
+                                DialogManager.getInstance().executeCommands(this.getMinecraft().player, option.getCommand(), this.speakerEntity);
+                            }
+                            DialogManager.getInstance().recordChoiceForCurrentDialog(option.getText(DialogManager.levelRegistryAccess(), playerName).getString());
+                            if (option.getTargetId() != null) {
+                                DialogManager.getInstance().jumpToDialog(option.getTargetId());
+                            } else {
+                                DialogManager.getInstance().showNextDialog();
+                            }
+                        },
+                        option.getText(DialogManager.levelRegistryAccess(), playerName), // Component message
+                        option.getTooltips(DialogManager.levelRegistryAccess(), playerName),
+                        option.getTextAlign(),
+                        option.getPadding()
+                ));
+
+                optionButtons.add(button);
+
+                // 更新Y坐标，移动到上一行
+                buttonX += buttonWidth;
+            }
+            startY -= maxHeights[i] + Math.max(maxMarginBottom[i], maxMarginTop[Math.min(i, optionsRows.size() - 1)]);
         }
     }
 
@@ -355,17 +411,12 @@ public class DialogScreen extends Screen {
         int textX = dialogBoxX + padding;
         int textY = dialogBoxY + padding;
 
-        // 如果显示说话者名称且有说话者
-        Component speakerComponent = dialogEntry.getSpeaker(levelRegistryAccess(), playerName);
-        if (ClientConfig.SHOW_SPEAKER_NAME.get() && speakerComponent != null && !speakerComponent.getString().isEmpty()) {
-            guiGraphics.drawString(font, speakerComponent, textX, textY, 0xFFFFFF);
-            textY += font.lineHeight + 5;
-        }
+        textY = renderSpeaker(guiGraphics, textX, textY);
 
         // 渲染对话文本
-        Component text = dialogEntry.getText(levelRegistryAccess(), playerName);
+        Component text = dialogEntry.getText(DialogManager.levelRegistryAccess(), playerName);
         String rawText = text.getString();
-        if (rawText != null && !rawText.isEmpty()) {
+        if (!rawText.isEmpty()) {
             int maxWidth = dialogBoxWidth - (padding * 2);
             int textAnimationSpeed = ClientConfig.TEXT_ANIMATION_SPEED.get(); // 每秒字符数
 
@@ -380,7 +431,7 @@ public class DialogScreen extends Screen {
                     lastCharTime = currentTime;
                 }
                 // 计算每字符间隔时间 (毫秒)
-                long charInterval = (textAnimationSpeed > 0) ? (1000 / textAnimationSpeed) : 0;
+                long charInterval = 1000 / textAnimationSpeed;
 
                 if (currentTime - lastCharTime >= charInterval) {
                     currentCharIndex++;
@@ -390,37 +441,6 @@ public class DialogScreen extends Screen {
                         currentCharIndex = rawText.length(); // 确保索引不超过长度
                         lastCharTime = System.currentTimeMillis(); // 记录文本完全显示的时间点，用于自动播放计时
                     }
-                }
-            }
-
-            // 渲染对话中展示的物品
-            if (!this.displayItemStacks.isEmpty() && textFullyDisplayed) {
-                int itemSize = 16;
-                int itemPadding = 4;
-                int totalItemWidth = (this.displayItemStacks.size() * itemSize) + (Math.max(0, this.displayItemStacks.size() - 1) * itemPadding);
-
-                int startX = dialogBoxX + (dialogBoxWidth - totalItemWidth) / 2;
-                int itemY = dialogBoxY - itemSize - 5;
-
-                for (ItemStack itemStack : this.displayItemStacks) {
-
-                    guiGraphics.renderItem(itemStack, startX, itemY);
-
-                    if (mouseX >= startX && mouseX < startX + itemSize && mouseY >= itemY && mouseY < itemY + itemSize) {
-                        guiGraphics.fill(startX, itemY, startX + itemSize, itemY + itemSize, 0x80000000);
-                    }
-
-                    guiGraphics.renderItemDecorations(this.font, itemStack, startX, itemY);
-
-                    startX += itemSize + itemPadding;
-                }
-
-                startX = dialogBoxX + (dialogBoxWidth - totalItemWidth) / 2;
-                for (ItemStack itemStack : this.displayItemStacks) {
-                    if (mouseX >= startX && mouseX < startX + itemSize && mouseY >= itemY && mouseY < itemY + itemSize) {
-                        guiGraphics.renderTooltip(this.font, itemStack, mouseX, mouseY);
-                    }
-                    startX += itemSize + itemPadding;
                 }
             }
 
@@ -468,8 +488,13 @@ public class DialogScreen extends Screen {
             }
         }
 
+        // 渲染对话中展示的物品
+        if (textFullyDisplayed) {
+            DialogManager.renderDisplayItem(guiGraphics, font, displayItemStacks, dialogBoxWidth, dialogBoxX, dialogBoxY, mouseX, mouseY);
+        }
+
         // 在文本完全显示后，并且有选项时，才创建和显示选项按钮
-        if (textFullyDisplayed && dialogEntry.hasOptions()) {
+        if ((textFullyDisplayed || showOptionsNow) && dialogEntry.hasOptions()) {
             if (!this.optionButtonsCreated) {
                 createOptionButtons();
                 this.optionButtonsCreated = true;
@@ -481,10 +506,10 @@ public class DialogScreen extends Screen {
         }
 
         // 悬浮文本提示
-        if (this.viewHistoryButton.isMouseOver(mouseX, mouseY)) {
+        if (this.viewHistoryButton != null && this.viewHistoryButton.isMouseOver(mouseX, mouseY)) {
             guiGraphics.renderTooltip(this.font, Component.translatable("dialog.ui.history"), mouseX, mouseY);
         }
-        if (this.autoPlayButton.isMouseOver(mouseX, mouseY)) {
+        if (this.autoPlayButton != null && this.autoPlayButton.isMouseOver(mouseX, mouseY)) {
             guiGraphics.renderTooltip(this.font, Component.translatable("dialog.ui.auto_play"), mouseX, mouseY);
         }
 
@@ -526,6 +551,16 @@ public class DialogScreen extends Screen {
         }
     }
 
+    protected int renderSpeaker(GuiGraphics guiGraphics, int textX, int textY) {
+        // 如果显示说话者名称且有说话者
+        Component speakerComponent = dialogEntry.getSpeaker(DialogManager.levelRegistryAccess(), playerName);
+        if (ClientConfig.SHOW_SPEAKER_NAME.get() && speakerComponent != null && !speakerComponent.getString().isEmpty()) {
+            guiGraphics.drawString(font, speakerComponent, textX, textY, 0xFFFFFF);
+            textY += font.lineHeight + 5;
+        }
+        return textY;
+    }
+
     @Override
     public boolean isPauseScreen() {
         return ClientConfig.IS_PAUSE_SCREEN.get();
@@ -546,13 +581,7 @@ public class DialogScreen extends Screen {
                     return true; // 事件已处理，但不执行关闭操作
                 } else {
                     // 允许关闭，显示确认窗口
-                    Component confirmMessage = Component.translatable("dialog.ui.confirm_esc");
-                    ConfirmScreen confirmScreen = new ConfirmScreen(
-                            this::confirmCloseDialogWithSkip,
-                            Component.translatable("dialog.ui.esc"),
-                            confirmMessage
-                    );
-                    this.minecraft.setScreen(confirmScreen);
+                    preClose();
                     return true; // 事件已处理
                 }
             }
@@ -589,7 +618,7 @@ public class DialogScreen extends Screen {
             DialogManager.stopCurrentAudio();
 
             textFullyDisplayed = true;
-            currentCharIndex = dialogEntry.getText(levelRegistryAccess(), playerName).getString().length();
+            currentCharIndex = dialogEntry.getText(DialogManager.levelRegistryAccess(), playerName).getString().length();
             lastCharTime = System.currentTimeMillis();
             return true;
         }
@@ -598,8 +627,22 @@ public class DialogScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    /**
+     * 玩家按下关闭按钮后
+     * 此处为显示关闭对话的提示
+     */
+    protected void preClose() {
+        Component confirmMessage = Component.translatable("dialog.ui.confirm_esc");
+        ConfirmScreen confirmScreen = new ConfirmScreen(
+                this::confirmCloseDialogWithSkip,
+                Component.translatable("dialog.ui.esc"),
+                confirmMessage
+        );
+        this.minecraft.setScreen(confirmScreen);
+    }
+
     //处理跳过对话确认的回调方法
-    private void confirmCloseDialogWithSkip(boolean confirmed) {
+    protected void confirmCloseDialogWithSkip(boolean confirmed) {
         if (confirmed) {
             // 用户确认跳过，执行后续指令并关闭对话
             executeRemainingCommandsAndClose();
@@ -614,7 +657,7 @@ public class DialogScreen extends Screen {
     /**
      * 执行后续所有指令并关闭对话
      */
-    private void executeRemainingCommandsAndClose() {
+    protected void executeRemainingCommandsAndClose() {
         // 获取当前条目之后的所有条目
         List<DialogEntry> remainingEntries = dialogSequence.getRemainingEntries(dialogEntry);
 
@@ -624,6 +667,8 @@ public class DialogScreen extends Screen {
                 DialogManager.getInstance().executeCommands(this.getMinecraft().player, entry.getCommands(), this.speakerEntity);
             }
         }
+
+        DialogManager.getInstance().reset();
 
         // 关闭对话界面
         this.onClose();
@@ -683,8 +728,8 @@ public class DialogScreen extends Screen {
                 if (!textFullyDisplayed) {
                     // 如果文本未完全显示，点击使其完全显示
                     textFullyDisplayed = true;
-                    currentCharIndex = dialogEntry.getText(levelRegistryAccess(), playerName).getString().length();
-                    lastCharTime = 0; // 重置动画或自动播放的时间
+                    currentCharIndex = dialogEntry.getText(DialogManager.levelRegistryAccess(), playerName).getString().length();
+                    lastCharTime = 0L; // 重置动画或自动播放的时间
                     return true; // 消费点击事件
                 } else {
                     // 文本已完全显示
@@ -711,12 +756,12 @@ public class DialogScreen extends Screen {
         this.showingHistory = !this.showingHistory;
     }
 
-    private void toggleAutoPlay() {
+    protected void toggleAutoPlay() {
         DialogManager.setAutoPlaying(!DialogManager.isAutoPlaying());
         updateAutoPlayButtonText();
     }
 
-    private void updateAutoPlayButtonText() {
+    protected void updateAutoPlayButtonText() {
         if (this.autoPlayButton != null) {
             this.autoPlayButton.setMessage(Component.literal(DialogManager.isAutoPlaying() ? "⏸" : "▶"));
         }
@@ -725,7 +770,7 @@ public class DialogScreen extends Screen {
     /**
      * 播放历史记录中的音频
      */
-    private void playHistoryAudio(DialogEntry entry) {
+    protected void playHistoryAudio(DialogEntry entry) {
         // 停止当前播放的历史记录音频
         if (currentHistoryAudio != null) {
             Minecraft.getInstance().getSoundManager().stop(currentHistoryAudio);
@@ -786,14 +831,16 @@ public class DialogScreen extends Screen {
             if (this.children().contains(this.closeHistoryButton)) {
                 this.removeWidget(this.closeHistoryButton);
             }
-            this.closeHistoryButton.active = false;
+            if (this.closeHistoryButton != null) {
+                this.closeHistoryButton.active = false;
+            }
         }
     }
 
     /**
      * 渲染对话历史记录界面
      */
-    private void renderHistoryScreen(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+    protected void renderHistoryScreen(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
 
         //悬浮文本提示
         if (this.closeHistoryButton.isMouseOver(mouseX, mouseY)) {
@@ -818,8 +865,8 @@ public class DialogScreen extends Screen {
         // 重新计算内容总高度
         totalHistoryContentHeight = 0;
         for (DialogEntry entry : historyEntries) {
-            Component currentEntrySpeaker = entry.getSpeaker(levelRegistryAccess(), playerName);
-            Component dialogText = entry.getText(levelRegistryAccess(), playerName);
+            Component currentEntrySpeaker = entry.getSpeaker(DialogManager.levelRegistryAccess(), playerName);
+            Component dialogText = entry.getText(DialogManager.levelRegistryAccess(), playerName);
             Component lineToRender;
             if (dialogText == null) dialogText = Component.empty();
             if (currentEntrySpeaker != null && !currentEntrySpeaker.getString().isEmpty()) {
@@ -864,8 +911,8 @@ public class DialogScreen extends Screen {
         for (DialogEntry entry : historyEntries) {
 
 
-            Component currentEntrySpeaker = entry.getSpeaker(levelRegistryAccess(), playerName);
-            Component dialogText = entry.getText(levelRegistryAccess(), playerName);
+            Component currentEntrySpeaker = entry.getSpeaker(DialogManager.levelRegistryAccess(), playerName);
+            Component dialogText = entry.getText(DialogManager.levelRegistryAccess(), playerName);
             Component lineToRender;
 
             if (dialogText == null) {
@@ -1014,19 +1061,7 @@ public class DialogScreen extends Screen {
     }
 
     // 历史记录音频播放按钮类
-    private static class HistoryAudioButton {
-        public final DialogEntry entry;
-        public final int x, y, width, height;
-        public final int entryIndex;
-
-        public HistoryAudioButton(DialogEntry entry, int x, int y, int width, int height, int entryIndex) {
-            this.entry = entry;
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
-            this.entryIndex = entryIndex;
-        }
+    protected record HistoryAudioButton(DialogEntry entry, int x, int y, int width, int height, int entryIndex) {
 
         public boolean isMouseOver(double mouseX, double mouseY) {
             return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;

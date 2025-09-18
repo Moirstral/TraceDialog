@@ -5,6 +5,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
@@ -24,16 +25,17 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 import top.yourzi.dialog.config.ClientConfig;
-import top.yourzi.dialog.model.*;
+import top.yourzi.dialog.model.BackgroundRenderOption;
+import top.yourzi.dialog.model.DialogEntry;
+import top.yourzi.dialog.model.DialogSequence;
+import top.yourzi.dialog.model.PortraitAnimationType;
 import top.yourzi.dialog.network.NetworkHandler;
-import top.yourzi.dialog.ui.BackgroundImageDisplayData;
-import top.yourzi.dialog.ui.DialogOverlay;
-import top.yourzi.dialog.ui.DialogScreen;
-import top.yourzi.dialog.ui.PortraitDisplayData;
+import top.yourzi.dialog.ui.*;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -405,28 +407,7 @@ public class DialogManager {
 
             // 如果条目可见，再处理其选项的可见性
             if (entry.hasOptions()) {
-                List<DialogOption> visibleOptions = new ArrayList<>();
-                for (DialogOption option : entry.getOptions()) {
-                    String optionVisibilityCommand = option.getVisibilityCommand();
-                    if (optionVisibilityCommand == null || optionVisibilityCommand.isEmpty()) {
-                        visibleOptions.add(option);
-                        continue;
-                    }
-
-                    try {
-                        int result = dispatcher.execute(dispatcher.parse(optionVisibilityCommand, commandSource));
-                        if (result == 1) {
-                            visibleOptions.add(option);
-                        } else {
-                            Dialog.LOGGER.debug("Visibility command '{}' for option '{}' (dialog '{}', entry '{}') for player {} returned {}, option hidden.",
-                                    optionVisibilityCommand, option.getText(levelRegistryAccess, player.getName().getString()) != null ? option.getText(levelRegistryAccess, player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), result);
-                        }
-                    } catch (Exception e) {
-                        Dialog.LOGGER.warn("Error executing visibility command '{}' for option '{}' (dialog '{}', entry '{}') for player {}: {}. Option hidden.",
-                                optionVisibilityCommand, option.getText(levelRegistryAccess, player.getName().getString()) != null ? option.getText(levelRegistryAccess, player.getName().getString()).getString() : "<no text>", playerSpecificSequence.getId(), entry.getId(), player.getName().getString(), e.getMessage());
-                    }
-                }
-                entry.setOptions(visibleOptions.toArray(new DialogOption[0]));
+                entry.getOptions().visible(dispatcher, commandSource, playerSpecificSequence.getId() + ":" + entry.getId());
             }
             visibleEntries.add(entry); // 将可见的条目（及其处理过的选项）添加到列表
         }
@@ -589,22 +570,31 @@ public class DialogManager {
             }
             this.currentDialogPlayerName = playerName;
             // 显示对话
-            if (currentSequence.getType() == DialogSequence.DialogType.OVERLAY) {
-                // 覆层形式的对话
-                DialogOverlay.getInstance().setDialogEntry(currentSequence, currentEntry);
-            } else {
-                // 发送玩家开始无敌消息
-                int status = 0;
-                if (currentSequence.isInvisible()) {
-                    status = 2;
-                } else if (currentSequence.isInvulnerable()) {
-                    status = 1;
-                }
-                if (status != 0) {
-                    NetworkHandler.sendPlayerInvinciblePacketToServer(status);
-                }
-                // 屏幕形式的对话
-                Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName, speakerEntity));
+            switch (currentSequence.getType()) {
+                case OVERLAY:
+                    // 覆层形式的对话
+                    DialogOverlay.getInstance().setDialogEntry(currentSequence, currentEntry);
+                    break;
+                case SCREEN:
+                    // 屏幕形式的对话
+                    Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName, speakerEntity));
+                    break;
+                case MENU:
+                    // 菜单
+                    Minecraft.getInstance().setScreen(new DialogMenu(currentSequence, currentEntry, this.currentDialogPlayerName, speakerEntity));
+                    break;
+                default:
+                    break;
+            }
+            // 发送玩家开始无敌消息
+            int status = 0;
+            if (currentSequence.isInvisible()) {
+                status = 2;
+            } else if (currentSequence.isInvulnerable()) {
+                status = 1;
+            }
+            if (status != 0) {
+                NetworkHandler.sendPlayerInvinciblePacketToServer(status);
             }
         });
     }
@@ -644,6 +634,12 @@ public class DialogManager {
         isAutoPlaying = false;
     }
 
+    public void reset() {
+        Minecraft.getInstance().setScreen(null);
+        currentSequence = null;
+        currentEntry = null;
+    }
+
     /**
      * 显示对话序列中的下一条对话。
      */
@@ -656,9 +652,7 @@ public class DialogManager {
         // 检查当前对话条目是否设置了结束对话标记
         if (currentEntry.isEndDialog()) {
             // 强制结束对话，关闭对话界面
-            Minecraft.getInstance().setScreen(null);
-            currentSequence = null;
-            currentEntry = null;
+            reset();
             return;
         }
 
@@ -682,7 +676,18 @@ public class DialogManager {
         stopCurrentAudio();
 
         // 更新对话界面
-        Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
+        switch (currentSequence.getType()) {
+            case SCREEN:
+                // 屏幕形式的对话
+                Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
+                break;
+            case MENU:
+                // 菜单
+                Minecraft.getInstance().setScreen(new DialogMenu(currentSequence, currentEntry, this.currentDialogPlayerName));
+                break;
+            default:
+                break;
+        }
     }
 
     /**
@@ -714,6 +719,11 @@ public class DialogManager {
         // 在创建新的DialogScreen之前停止当前音频
         stopCurrentAudio();
 
+        // 发送玩家结束无敌消息
+        if (currentSequence.isInvisible() || currentSequence.isInvulnerable()) {
+            NetworkHandler.sendPlayerInvinciblePacketToServer(0);
+        }
+
         // 更新对话界面
         DialogOverlay.getInstance().setDialogEntry(currentSequence, currentEntry);
     }
@@ -723,6 +733,10 @@ public class DialogManager {
      */
     @OnlyIn(Dist.CLIENT)
     public void jumpToDialog(String targetId) {
+        if (targetId == null) {
+            reset();
+            return;
+        }
         if (Minecraft.getInstance() == null || !Minecraft.getInstance().level.isClientSide) return;
         if (currentSequence == null) {
             return;
@@ -741,7 +755,18 @@ public class DialogManager {
         // 在创建新的DialogScreen之前停止当前音频
         stopCurrentAudio();
 
-        Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
+        switch (currentSequence.getType()) {
+            case SCREEN:
+                // 屏幕形式的对话
+                Minecraft.getInstance().setScreen(new DialogScreen(currentSequence, currentEntry, this.currentDialogPlayerName));
+                break;
+            case MENU:
+                // 菜单
+                Minecraft.getInstance().setScreen(new DialogMenu(currentSequence, currentEntry, this.currentDialogPlayerName));
+                break;
+            default:
+                break;
+        }
     }
 
     /**
@@ -1087,5 +1112,42 @@ public class DialogManager {
             }
         }
         return sub;
+    }
+
+    public static HolderLookup.Provider levelRegistryAccess() {
+        return Minecraft.getInstance().level.registryAccess();
+    }
+
+    public static void renderDisplayItem(GuiGraphics guiGraphics, Font font, List<ItemStack> displayItemStacks, int dialogBoxWidth, int dialogBoxX, int dialogBoxY, int mouseX, int mouseY) {
+        // 渲染对话中展示的物品
+        if (!displayItemStacks.isEmpty()) {
+            int itemSize = 16;
+            int itemPadding = 4;
+            int totalItemWidth = (displayItemStacks.size() * itemSize) + (Math.max(0, displayItemStacks.size() - 1) * itemPadding);
+
+            int startX = dialogBoxX + (dialogBoxWidth - totalItemWidth) / 2;
+            int itemY = dialogBoxY - itemSize - 5;
+
+            for (ItemStack itemStack : displayItemStacks) {
+
+                guiGraphics.renderItem(itemStack, startX, itemY);
+
+                if (mouseX >= startX && mouseX < startX + itemSize && mouseY >= itemY && mouseY < itemY + itemSize) {
+                    guiGraphics.fill(startX, itemY, startX + itemSize, itemY + itemSize, 0x80000000);
+                }
+
+                guiGraphics.renderItemDecorations(font, itemStack, startX, itemY);
+
+                startX += itemSize + itemPadding;
+            }
+
+            startX = dialogBoxX + (dialogBoxWidth - totalItemWidth) / 2;
+            for (ItemStack itemStack : displayItemStacks) {
+                if (mouseX >= startX && mouseX < startX + itemSize && mouseY >= itemY && mouseY < itemY + itemSize) {
+                    guiGraphics.renderTooltip(font, itemStack, mouseX, mouseY);
+                }
+                startX += itemSize + itemPadding;
+            }
+        }
     }
 }

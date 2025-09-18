@@ -78,6 +78,8 @@
   "dialog.test_overlay.entry.start.text": "@i, 欢迎使用本模组，这是一个对话覆层的示例，覆层模式不影响操作，类似字幕。",
   "dialog.test_overlay.entry.end.text": "如果不出意外，现在已被设置为白天。",
 
+  "dialog.test_menu.entry.command.text": "要做什么呢？",
+
   "dialog.chat.history.title": "=============== %s 开始 ===============",
   "dialog.chat.history.entry": "%s: %s",
   "dialog.chat.history.footer": "=============== %s 结束 ==============="
